@@ -1,7 +1,11 @@
 import json
+import re
 from urllib.parse import urlsplit, urlunsplit
 
 import httpx
+
+
+THINKING_TAG_RE = re.compile(r'<think>.*?</think>', re.IGNORECASE | re.DOTALL)
 
 
 def _normalize_loopback_base_url(base_url: str) -> str:
@@ -36,6 +40,31 @@ def _extract_json_candidate(text: str) -> str:
     return cleaned
 
 
+def _flatten_message_field(value) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        parts = []
+        for item in value:
+            if isinstance(item, str):
+                parts.append(item)
+                continue
+            if isinstance(item, dict) and isinstance(item.get('text'), str):
+                parts.append(item['text'])
+        return ''.join(parts)
+    return ''
+
+
+def _visible_message_content(message: dict) -> str:
+    content = _flatten_message_field(message.get('content'))
+    content = THINKING_TAG_RE.sub('', content)
+    return content.strip()
+
+
+def _reasoning_message_content(message: dict) -> str:
+    return _flatten_message_field(message.get('reasoning_content')).strip()
+
+
 class LlamaCppClient:
     def __init__(self, base_url: str, model: str, timeout_seconds: int = 600):
         self.base_url = _normalize_loopback_base_url(base_url)
@@ -64,14 +93,31 @@ class LlamaCppClient:
     async def chat(self, messages, temperature: float, max_tokens: int) -> str:
         current_messages = list(messages)
         parts = []
+        token_budget = max_tokens
+        saw_reasoning_only = False
 
-        for _ in range(3):
-            data = await self._chat_completion(current_messages, temperature=temperature, max_tokens=max_tokens)
+        for _ in range(4):
+            data = await self._chat_completion(current_messages, temperature=temperature, max_tokens=token_budget)
             choice = data['choices'][0]
             msg = choice['message']
-            content = msg.get('content') or msg.get('reasoning_content') or ''
-            if content:
-                parts.append(content)
+            visible_content = _visible_message_content(msg)
+            reasoning_content = _reasoning_message_content(msg)
+            if visible_content:
+                parts.append(visible_content)
+            elif reasoning_content:
+                saw_reasoning_only = True
+
+            if choice.get('finish_reason') != 'length' and parts:
+                break
+
+            if not parts and reasoning_content:
+                if token_budget < 512:
+                    token_budget = 512
+                    continue
+                if token_budget < 1024:
+                    token_budget = 1024
+                    continue
+                break
 
             if choice.get('finish_reason') != 'length':
                 break
@@ -82,9 +128,23 @@ class LlamaCppClient:
                 {'role': 'assistant', 'content': partial},
                 {
                     'role': 'user',
-                    'content': 'Continue exactly from the next missing characters. Return only the continuation, without repeating, restarting, or summarizing.'
+                    'content': 'Continue exactly from the next missing characters. Return only the continuation, without repeating, restarting, summarizing, or showing reasoning.'
                 },
             ]
+
+        if not parts and saw_reasoning_only:
+            rescue_messages = [
+                *messages,
+                {
+                    'role': 'user',
+                    'content': 'Return only the final answer. Do not include chain-of-thought, internal reasoning, or thinking text.'
+                },
+            ]
+            rescue_budget = max(128, min(1024, max_tokens))
+            rescue_data = await self._chat_completion(rescue_messages, temperature=temperature, max_tokens=rescue_budget)
+            rescue_content = _visible_message_content(rescue_data['choices'][0]['message'])
+            if rescue_content:
+                return rescue_content
 
         return ''.join(parts).strip()
 

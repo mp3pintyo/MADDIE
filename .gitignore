@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.pyc
+app/generated/audio/
+app/generated/debates/
+logs/

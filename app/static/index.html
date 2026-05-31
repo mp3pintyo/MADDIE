@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang='hu'>
+<head>
+  <meta charset='utf-8'>
+  <meta name='viewport' content='width=device-width, initial-scale=1'>
+  <title>MADDIE</title>
+  <link rel='stylesheet' href='/app/static/styles.css'>
+</head>
+<body>
+  <div class='shell'>
+    <aside class='sidebar'>
+      <div class='brand'>
+        <div class='brand-mark'>M</div>
+        <div>
+          <h1>MADDIE</h1>
+          <p>Multi-Agent Debate Decision Intelligence Engine</p>
+        </div>
+      </div>
+
+      <div class='panel'>
+        <label>Téma</label>
+        <textarea id='topicInput' placeholder='Írd be a kérdést vagy témát...'></textarea>
+        <div class='actions two'>
+          <button id='openAdvisorModalBtn' class='secondary'>Tanácsadók kiválasztása</button>
+          <button id='openSettingsBtn' class='ghost'>Settings</button>
+        </div>
+        <button id='startBtn' class='primary'>Vitaindító</button>
+        <button id='stopBtn' class='danger' disabled>Megbeszélés befejezése</button>
+      </div>
+
+      <div class='panel small'>
+        <h3>Modell</h3>
+        <div id='modelInfo'>Betöltés...</div>
+      </div>
+
+      <div class='panel small'>
+        <h3>Exportok</h3>
+        <div id='exportsBox' class='exports empty'>A lezárt viták exportjai itt jelennek meg.</div>
+      </div>
+    </aside>
+
+    <main class='main'>
+      <section class='advisor-strip-wrap'>
+        <div class='section-head'>
+          <h2>Aktív tanácsadók</h2>
+          <span id='statusBadge' class='badge idle'>Nincs aktív vita</span>
+        </div>
+        <div id='advisorStrip' class='advisor-strip'></div>
+      </section>
+
+      <section id='chat' class='chat'></section>
+
+      <section id='summaryPanel' class='summary-panel hidden'>
+        <div class='section-head'><h2>Végső összegzés</h2></div>
+        <div id='summaryBlocks'></div>
+      </section>
+    </main>
+  </div>
+
+  <div id='advisorModal' class='modal hidden'>
+    <div class='modal-card large'>
+      <div class='modal-head'>
+        <h2>Válassz tanácsadókat</h2>
+        <button class='icon-btn' data-close='advisorModal'>✕</button>
+      </div>
+      <div id='advisorGrid' class='advisor-grid'></div>
+      <div class='modal-actions'><button class='primary' data-close='advisorModal'>Kész</button></div>
+    </div>
+  </div>
+
+  <div id='settingsDrawer' class='drawer hidden'>
+    <div class='drawer-card'>
+      <div class='modal-head'>
+        <h2>Settings</h2>
+        <button class='icon-btn' data-close='settingsDrawer'>✕</button>
+      </div>
+      <div class='settings-grid'>
+        <label>Llama base URL<input id='settingsBaseUrl'></label>
+        <label>Llama model<input id='settingsModel'></label>
+        <label>Temperature<input id='settingsTemp' type='number' step='0.1'></label>
+        <label>Max token / turn<input id='settingsMaxTokens' type='number'></label>
+        <label>OmniVoice speed<input id='settingsVoiceSpeed' type='number' step='0.1'></label>
+        <label>OmniVoice num_step<input id='settingsNumStep' type='number'></label>
+      </div>
+      <div id='advisorSettingsList' class='advisor-settings-list'></div>
+      <div class='modal-actions'><button id='saveSettingsBtn' class='primary'>Mentés</button></div>
+    </div>
+  </div>
+
+  <template id='messageTemplate'>
+    <article class='message'>
+      <img class='avatar' alt='avatar'>
+      <div class='bubble-wrap'>
+        <div class='bubble-head'>
+          <strong class='speaker'></strong>
+          <span class='meta'></span>
+        </div>
+        <div class='bubble'></div>
+        <audio class='audio-player' controls hidden></audio>
+      </div>
+    </article>
+  </template>
+
+  <script src='/app/static/app.js'></script>
+</body>
+</html>

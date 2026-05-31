@@ -13,6 +13,9 @@
   "omnivoice_language": "hu",
   "omnivoice_speed": 1.0,
   "omnivoice_num_step": 16,
+  "omnivoice_llm_annotation_enabled": true,
+  "omnivoice_markup_enabled": true,
+  "omnivoice_english_pronunciation_enabled": true,
   "omnivoice_device": "cuda:0",
   "meeting_name": "Tanácsadói kör"
 }

@@ -23,6 +23,9 @@ const els = {
   settingsMaxTokens: document.getElementById('settingsMaxTokens'),
   settingsVoiceSpeed: document.getElementById('settingsVoiceSpeed'),
   settingsNumStep: document.getElementById('settingsNumStep'),
+  settingsOmniVoiceLlmAnnotate: document.getElementById('settingsOmniVoiceLlmAnnotate'),
+  settingsOmniVoiceMarkupEnabled: document.getElementById('settingsOmniVoiceMarkupEnabled'),
+  settingsOmniVoiceEnglishPronunciationEnabled: document.getElementById('settingsOmniVoiceEnglishPronunciationEnabled'),
 };
 
 async function api(path, options = {}) {
@@ -192,6 +195,9 @@ async function loadSettings() {
   els.settingsMaxTokens.value = state.settings.max_tokens_per_turn;
   els.settingsVoiceSpeed.value = state.settings.omnivoice_speed;
   els.settingsNumStep.value = state.settings.omnivoice_num_step;
+  els.settingsOmniVoiceLlmAnnotate.checked = state.settings.omnivoice_llm_annotation_enabled !== false;
+  els.settingsOmniVoiceMarkupEnabled.checked = state.settings.omnivoice_markup_enabled !== false;
+  els.settingsOmniVoiceEnglishPronunciationEnabled.checked = state.settings.omnivoice_english_pronunciation_enabled !== false;
   const omniVoiceTarget = state.settings.omnivoice_base_url?.trim() || 'local worker';
   els.modelInfo.textContent = `${state.settings.llama_model} @ ${state.settings.llama_base_url} | OmniVoice @ ${omniVoiceTarget}`;
   renderAdvisorGrid(); renderAdvisorStrip(); renderAdvisorSettings();
@@ -205,6 +211,9 @@ els.saveSettingsBtn.addEventListener('click', async () => {
   state.settings.max_tokens_per_turn = Number(els.settingsMaxTokens.value);
   state.settings.omnivoice_speed = Number(els.settingsVoiceSpeed.value);
   state.settings.omnivoice_num_step = Number(els.settingsNumStep.value);
+  state.settings.omnivoice_llm_annotation_enabled = els.settingsOmniVoiceLlmAnnotate.checked;
+  state.settings.omnivoice_markup_enabled = els.settingsOmniVoiceMarkupEnabled.checked;
+  state.settings.omnivoice_english_pronunciation_enabled = els.settingsOmniVoiceEnglishPronunciationEnabled.checked;
   await api('/api/settings', { method: 'POST', body: JSON.stringify({ settings: state.settings, advisors: state.advisors }) });
   closePanel('settingsDrawer'); await loadSettings();
 });

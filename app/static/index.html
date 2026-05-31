@@ -83,6 +83,29 @@
         <label>OmniVoice speed<input id='settingsVoiceSpeed' type='number' step='0.1'></label>
         <label>OmniVoice num_step<input id='settingsNumStep' type='number'></label>
       </div>
+      <div class='settings-toggles'>
+        <label class='toggle-option'>
+          <input id='settingsOmniVoiceLlmAnnotate' type='checkbox'>
+          <span class='toggle-copy'>
+            <strong>LLM annotáció TTS előtt</strong>
+            <small>A válasz külön elemzésen megy át, és strukturált tervből kerülnek be az OmniVoice jelek.</small>
+          </span>
+        </label>
+        <label class='toggle-option'>
+          <input id='settingsOmniVoiceMarkupEnabled' type='checkbox'>
+          <span class='toggle-copy'>
+            <strong>Non-verbal tagek engedélyezése</strong>
+            <small>Beilleszti az olyan támogatott tageket, mint a [laughter] vagy a kérdő hangsúly jelölései.</small>
+          </span>
+        </label>
+        <label class='toggle-option'>
+          <input id='settingsOmniVoiceEnglishPronunciationEnabled' type='checkbox'>
+          <span class='toggle-copy'>
+            <strong>Angol pronunciation override-ok</strong>
+            <small>CMU/ARPAbet alapú kiejtési override-okat tehet az angol technikai vagy többértelmű szavakra.</small>
+          </span>
+        </label>
+      </div>
       <div id='advisorSettingsList' class='advisor-settings-list'></div>
       <div class='modal-actions'><button id='saveSettingsBtn' class='primary'>Mentés</button></div>
     </div>

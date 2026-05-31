@@ -87,6 +87,8 @@ class AppContainer:
             device=self.settings.omnivoice_device,
             base_url=self.settings.omnivoice_base_url,
             timeout_seconds=self.settings.request_timeout_seconds,
+            markup_enabled=self.settings.omnivoice_markup_enabled,
+            english_pronunciation_enabled=self.settings.omnivoice_english_pronunciation_enabled,
         ) if self.settings.omnivoice_enabled else None
 
 

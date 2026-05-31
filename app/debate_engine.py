@@ -8,6 +8,7 @@ from pathlib import Path
 from .config import LOGS_DIR
 from .llm_client import LlamaCppClient
 from .models import DebateEvent
+from .tts_manager import SUPPORTED_NON_VERBAL_TAGS, apply_omnivoice_annotation_plan, split_tts_sentences
 
 
 class DebateEngine:
@@ -135,13 +136,86 @@ Return only your spoken contribution.'''
                 max_tokens=max(120, int(self.settings.max_tokens_per_turn * 0.65)),
             )
 
+    def should_annotate_tts_text(self, language_context) -> bool:
+        if not self.tts or not self.settings.omnivoice_llm_annotation_enabled:
+            return False
+        if self.settings.omnivoice_markup_enabled:
+            return True
+        return self.settings.omnivoice_english_pronunciation_enabled and language_context['tts_code'] == 'en'
+
+    async def annotate_tts_text(self, text: str, language_context) -> str:
+        stripped = (text or '').strip()
+        if not stripped or not self.should_annotate_tts_text(language_context):
+            return stripped
+
+        sentence_lines = []
+        for index, (sentence, _) in enumerate(split_tts_sentences(stripped)):
+            sentence_lines.append(f'{index}: {sentence.strip() or "[empty]"}')
+
+        allow_pronunciation = self.settings.omnivoice_english_pronunciation_enabled and language_context['tts_code'] == 'en'
+        system = 'You create structured OmniVoice delivery annotations. Return only valid JSON.'
+        user = f'''Language code: {language_context['tts_code']}
+Language name: {language_context['prompt_name']}
+
+Original text:
+{stripped}
+
+Sentence list (0-based):
+{chr(10).join(sentence_lines)}
+
+Supported non-verbal tags:
+{', '.join(f'[{tag}]' for tag in SUPPORTED_NON_VERBAL_TAGS)}
+
+Return a JSON object with this exact schema:
+{{
+  "sentence_tags": [
+    {{"sentence_index": 0, "tag": "question-en", "reason": "short reason"}}
+  ],
+  "pronunciations": [
+    {{"text": "AI", "arpabet": "EY1 AY1", "occurrence": 1, "reason": "short reason"}}
+  ]
+}}
+
+Rules:
+- Do not rewrite, summarize, translate, or paraphrase the original text.
+- Use sentence_tags only when the delivery clearly benefits.
+- Use at most 2 non-verbal tags total.
+- Only use supported tags.
+- If no non-verbal tag is needed, return an empty sentence_tags array.
+- {'Pronunciations are allowed because the speech is English. Use them only for ambiguous or technical words.' if allow_pronunciation else 'Pronunciations are disabled here. Return an empty pronunciations array.'}
+- For pronunciations, text must be an exact substring from the original text.
+- occurrence is 1-based and counts whole-word matches in reading order.
+- If nothing needs annotation, return both arrays empty.
+'''
+
+        try:
+            annotation_plan = await self.llm.chat_json(
+                messages=[{'role': 'system', 'content': system}, {'role': 'user', 'content': user}],
+                temperature=0.0,
+                max_tokens=260,
+            )
+        except Exception:
+            return stripped
+
+        if not isinstance(annotation_plan, dict):
+            return stripped
+
+        annotated = apply_omnivoice_annotation_plan(
+            stripped,
+            language_context['tts_code'],
+            sentence_tags=annotation_plan.get('sentence_tags'),
+            pronunciations=annotation_plan.get('pronunciations'),
+        )
+        return annotated or stripped
+
     async def synthesize_message_audio(self, session, event, language_context):
         if not self.tts:
             return None
         advisor = self.advisors[event.advisor_id]
         try:
+            tts_text = await self.annotate_tts_text(event.content or '', language_context)
             audio_path = await self.tts.synthesize(
-                text=event.content or '',
+                text=tts_text,
                 voice_mode=advisor.voice_mode,
                 voice_instruct=advisor.voice_instruct,
                 ref_audio=advisor.ref_audio,

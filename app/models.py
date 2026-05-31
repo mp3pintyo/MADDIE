@@ -33,6 +33,9 @@ class AppSettings(BaseModel):
     omnivoice_language: str = 'hu'
     omnivoice_speed: float = 1.0
     omnivoice_num_step: int = 8
+    omnivoice_llm_annotation_enabled: bool = True
+    omnivoice_markup_enabled: bool = True
+    omnivoice_english_pronunciation_enabled: bool = True
     omnivoice_device: str = 'cuda:0'
     meeting_name: str = 'MADDIE — Tanácsadói kör'
 

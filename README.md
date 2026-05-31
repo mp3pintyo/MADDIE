@@ -209,3 +209,4 @@ run.sh
 ## Licenc
 
 Tedd hozzá a kívánt licencet a publikus repo létrehozásakor, ha szükséges.
+# MADDIE

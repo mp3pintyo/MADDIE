@@ -1,6 +1,8 @@
 import asyncio
 import json
 import re
+import shutil
+import subprocess
 import time
 import traceback
 from pathlib import Path
@@ -80,6 +82,40 @@ class DebateEngine:
         details = traceback.format_exc()
         log_path.write_text(details, encoding='utf-8')
         return log_path
+
+    def podcast_concat_entry(self, relative_audio_path: str) -> str:
+        audio_path = (Path(__file__).resolve().parent.parent / relative_audio_path).resolve()
+        return f"file '{audio_path.as_posix()}'"
+
+    def export_podcast_audio(self, concat_list: Path, podcast_path: Path):
+        ffmpeg_path = shutil.which('ffmpeg')
+        if not ffmpeg_path:
+            raise FileNotFoundError('ffmpeg nincs a PATH-ban.')
+
+        proc = subprocess.run(
+            [
+                ffmpeg_path,
+                '-y',
+                '-f',
+                'concat',
+                '-safe',
+                '0',
+                '-i',
+                str(concat_list),
+                '-c',
+                'copy',
+                str(podcast_path),
+            ],
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            errors='ignore',
+            check=False,
+        )
+        if proc.returncode != 0:
+            stderr_text = (proc.stderr or '').strip()
+            stderr_line = stderr_text.splitlines()[-1] if stderr_text else f'ffmpeg exit code {proc.returncode}'
+            raise RuntimeError(stderr_line)
 
     async def generate_turn(self, session, advisor, round_index, round_label, transcript_excerpt, language_context):
         selected = [self.advisors[x] for x in session.advisor_ids]
@@ -310,18 +346,14 @@ Requirements:
         podcast_path = None
         if wavs:
             concat_list = out_dir / 'podcast_concat.txt'
-            concat_list.write_text("\n".join([f"file '{Path(__file__).resolve().parent.parent / w}'" for w in wavs]), encoding='utf-8')
+            concat_list.write_text("\n".join([self.podcast_concat_entry(w) for w in wavs]), encoding='utf-8')
             podcast_path = out_dir / 'podcast.wav'
             try:
-                proc = await asyncio.create_subprocess_exec('ffmpeg', '-y', '-f', 'concat', '-safe', '0', '-i', str(concat_list), '-c', 'copy', str(podcast_path), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-                _, stderr = await proc.communicate()
-                if proc.returncode != 0:
-                    stderr_text = stderr.decode('utf-8', errors='ignore').strip()
-                    stderr_line = stderr_text.splitlines()[-1] if stderr_text else f'ffmpeg exit code {proc.returncode}'
-                    export_warnings.append(f'Podcast export hiba: {stderr_line}')
-                    podcast_path = None
+                await asyncio.to_thread(self.export_podcast_audio, concat_list, podcast_path)
             except Exception as exc:
                 export_warnings.append(f'Podcast export hiba: {self.format_error(exc)}')
+                if podcast_path.exists():
+                    podcast_path.unlink()
                 podcast_path = None
         session.final_payload = {
             'summary': summary,
@@ -339,9 +371,10 @@ Requirements:
             await self.emit(session, 'status', content='A vita elindult.')
             selected = [self.advisors[x] for x in session.advisor_ids if x in self.advisors]
             language_context = self.detect_topic_language(session.topic)
-            total_rounds = max(1, self.settings.opening_rounds)
+            round_index = 0
             stop_now = False
-            for round_index in range(total_rounds):
+            while True:
+                round_index += 1
                 for advisor in selected:
                     if session.stop_requested:
                         if session.stop_budget_remaining is None:
@@ -350,8 +383,8 @@ Requirements:
                             stop_now = True
                             break
                     transcript_excerpt = self.transcript_text(session).split("\n\n")[-8:]
-                    turn = await self.generate_turn(session, advisor, round_index + 1, 'zárókör' if session.stop_requested else f"{round_index + 1}. kör", "\n\n".join(transcript_excerpt), language_context)
-                    event = await self.emit(session, 'message', content=turn, advisor=advisor, meta={'round': round_index + 1, 'closing': bool(session.stop_requested)})
+                    turn = await self.generate_turn(session, advisor, round_index, 'zárókör' if session.stop_requested else f"{round_index}. kör", "\n\n".join(transcript_excerpt), language_context)
+                    event = await self.emit(session, 'message', content=turn, advisor=advisor, meta={'round': round_index, 'closing': bool(session.stop_requested)})
                     audio_event = await self.synthesize_message_audio(session, event, language_context)
                     if audio_event:
                         await self.wait_for_client_continue(session, audio_event.meta.get('event_id'))

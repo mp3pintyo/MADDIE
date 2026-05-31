@@ -1,0 +1,52 @@
+#1 [internal] load local bake definitions
+#1 reading from stdin 800B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 1.17kB done
+#2 DONE 0.0s
+
+#3 [auth] library/python:pull token for registry-1.docker.io
+#3 DONE 0.0s
+
+#4 [internal] load metadata for docker.io/library/python:3.12-slim
+#4 DONE 0.8s
+
+#5 [internal] load .dockerignore
+#5 transferring context: 2B done
+#5 DONE 0.0s
+
+#6 [internal] load build context
+#6 transferring context: 289B done
+#6 DONE 0.1s
+
+#7 [1/5] FROM docker.io/library/python:3.12-slim@sha256:090ba77e2958f6af52a5341f788b50b032dd4ca28377d2893dcf1ecbdfdfe203
+#7 resolve docker.io/library/python:3.12-slim@sha256:090ba77e2958f6af52a5341f788b50b032dd4ca28377d2893dcf1ecbdfdfe203 0.1s done
+#7 DONE 0.1s
+
+#8 [2/5] RUN apt-get update     && apt-get install -y --no-install-recommends build-essential ffmpeg git libsndfile1     && rm -rf /var/lib/apt/lists/*
+#8 CACHED
+
+#9 [3/5] RUN python -m pip install --upgrade pip setuptools wheel     && sh -lc "pip install --index-url https://download.pytorch.org/whl/cu128 torch==2.8.0+cu128 torchaudio==2.8.0+cu128"     && pip install fastapi==0.136.3 uvicorn==0.48.0 python-multipart==0.0.29 soundfile     && git clone --filter=blob:none "https://github.com/k2-fsa/OmniVoice.git" /tmp/omnivoice-src     && cd /tmp/omnivoice-src     && git fetch --depth 1 origin "refs/pull/71/head"     && git checkout FETCH_HEAD     && pip install /tmp/omnivoice-src     && rm -rf /tmp/omnivoice-src
+#9 CACHED
+
+#10 [4/5] WORKDIR /workspace
+#10 CACHED
+
+#11 [5/5] COPY services /workspace/services
+#11 CACHED
+
+#12 exporting to image
+#12 exporting layers done
+#12 exporting manifest sha256:113cfc3a2a3c04ebeae99aa37e0712662aadb3139e08c94ea1bdb255408106be done
+#12 exporting config sha256:cc91c3d0287215b7353c0dc8bb1e014eeaa43f07d3726efb72851090742fa9e3 done
+#12 exporting attestation manifest sha256:d90ba72e6a063f95d4a4b1f3a4ea893062b532a1d5e019e2a217c38b489ae7f4 0.1s done
+#12 exporting manifest list sha256:95cbb7f27b5ab950f2e619922288ee75197840d0738ff79b3e1296c881cf0bf3
+#12 exporting manifest list sha256:95cbb7f27b5ab950f2e619922288ee75197840d0738ff79b3e1296c881cf0bf3 0.0s done
+#12 naming to docker.io/library/maddie-omnivoice:latest done
+#12 unpacking to docker.io/library/maddie-omnivoice:latest 0.0s done
+#12 DONE 0.2s
+
+#13 resolving provenance for metadata file
+#13 DONE 0.0s
+ maddie-omnivoice  Built

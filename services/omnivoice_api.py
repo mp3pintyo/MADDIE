@@ -1,5 +1,6 @@
 import io
 import os
+import tempfile
 
 import soundfile as sf
 import torch
@@ -36,6 +37,17 @@ def _resolve_dtype(device_name: str, dtype_name: str | None):
     if name == 'bf16':
         return torch.bfloat16
     raise ValueError(f'Nem támogatott OmniVoice dtype: {dtype_name}')
+
+
+def _prepare_audio_for_write(audio):
+    if isinstance(audio, torch.Tensor):
+        audio = audio.detach().float().cpu().numpy()
+    if getattr(audio, 'ndim', 0) == 2:
+        if 1 in audio.shape:
+            return audio.squeeze()
+        if audio.shape[0] < audio.shape[1]:
+            return audio.T
+    return audio
 
 
 class OmniVoiceService:
@@ -128,6 +140,13 @@ async def synthesize(
         if temp_ref_path and os.path.exists(temp_ref_path):
             os.remove(temp_ref_path)
 
-    buffer = io.BytesIO()
-    sf.write(buffer, audios[0], model.sampling_rate, format='WAV')
-    return Response(buffer.getvalue(), media_type='audio/wav')
+    with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_wav:
+        temp_wav_path = temp_wav.name
+
+    try:
+        sf.write(temp_wav_path, _prepare_audio_for_write(audios[0]), model.sampling_rate, format='WAV')
+        with open(temp_wav_path, 'rb') as handle:
+            return Response(handle.read(), media_type='audio/wav')
+    finally:
+        if os.path.exists(temp_wav_path):
+            os.remove(temp_wav_path)

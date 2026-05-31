@@ -1,10 +1,12 @@
 FROM python:3.12-slim
 
 ENV PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    CC=gcc \
+    CXX=g++
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg git libsndfile1 \
+    && apt-get install -y --no-install-recommends build-essential ffmpeg git libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
 
 ARG TORCH_INSTALL_COMMAND="pip install --index-url https://download.pytorch.org/whl/cu128 torch==2.8.0+cu128 torchaudio==2.8.0+cu128"

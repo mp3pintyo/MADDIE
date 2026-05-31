@@ -8,6 +8,17 @@ import torch
 from omnivoice.models.omnivoice import OmniVoice
 
 
+def _prepare_audio_for_write(audio):
+    if isinstance(audio, torch.Tensor):
+        audio = audio.detach().float().cpu().numpy()
+    if getattr(audio, 'ndim', 0) == 2:
+        if 1 in audio.shape:
+            return audio.squeeze()
+        if audio.shape[0] < audio.shape[1]:
+            return audio.T
+    return audio
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', default='k2-fsa/OmniVoice')
@@ -51,7 +62,7 @@ def main():
                     speed=args.speed,
                     num_step=num_step,
                 )
-            sf.write(output_path, audios[0], model.sampling_rate)
+            sf.write(output_path, _prepare_audio_for_write(audios[0]), model.sampling_rate)
             sys.stdout.write(json.dumps({'request_id': request_id, 'status': 'ok', 'output_path': str(output_path)}, ensure_ascii=False) + '\n')
             sys.stdout.flush()
         except Exception as exc:

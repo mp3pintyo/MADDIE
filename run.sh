@@ -7,4 +7,5 @@ if [ ! -d .venv ]; then
 fi
 . .venv/bin/activate
 pip install -r requirements.txt >/dev/null
-exec uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+PORT="${MADDIE_PORT:-8000}"
+exec uvicorn app.main:app --host 127.0.0.1 --port "$PORT" --reload

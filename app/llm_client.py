@@ -1,5 +1,23 @@
 import json
+from urllib.parse import urlsplit, urlunsplit
+
 import httpx
+
+
+def _normalize_loopback_base_url(base_url: str) -> str:
+    parts = urlsplit(base_url.rstrip('/'))
+    if parts.hostname != '0.0.0.0':
+        return base_url.rstrip('/')
+
+    netloc = '127.0.0.1'
+    if parts.port:
+        netloc = f'{netloc}:{parts.port}'
+    if parts.username:
+        auth = parts.username
+        if parts.password:
+            auth = f'{auth}:{parts.password}'
+        netloc = f'{auth}@{netloc}'
+    return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment)).rstrip('/')
 
 
 def _extract_json_candidate(text: str) -> str:
@@ -20,17 +38,11 @@ def _extract_json_candidate(text: str) -> str:
 
 class LlamaCppClient:
     def __init__(self, base_url: str, model: str, timeout_seconds: int = 600):
-        self.base_url = base_url.rstrip('/')
+        self.base_url = _normalize_loopback_base_url(base_url)
         self.model = model
         self.timeout_seconds = timeout_seconds
 
-    async def list_models(self):
-        async with httpx.AsyncClient(timeout=httpx.Timeout(self.timeout_seconds, connect=30.0)) as client:
-            r = await client.get(f'{self.base_url}/v1/models')
-            r.raise_for_status()
-            return r.json()
-
-    async def chat(self, messages, temperature: float, max_tokens: int) -> str:
+    async def _chat_completion(self, messages, temperature: float, max_tokens: int):
         payload = {
             'model': self.model,
             'messages': messages,
@@ -41,12 +53,40 @@ class LlamaCppClient:
         async with httpx.AsyncClient(timeout=httpx.Timeout(self.timeout_seconds, connect=30.0)) as client:
             r = await client.post(f'{self.base_url}/v1/chat/completions', json=payload)
             r.raise_for_status()
-            data = r.json()
-        msg = data['choices'][0]['message']
-        content = (msg.get('content') or '').strip()
-        if content:
-            return content
-        return (msg.get('reasoning_content') or '').strip()
+            return r.json()
+
+    async def list_models(self):
+        async with httpx.AsyncClient(timeout=httpx.Timeout(self.timeout_seconds, connect=30.0)) as client:
+            r = await client.get(f'{self.base_url}/v1/models')
+            r.raise_for_status()
+            return r.json()
+
+    async def chat(self, messages, temperature: float, max_tokens: int) -> str:
+        current_messages = list(messages)
+        parts = []
+
+        for _ in range(3):
+            data = await self._chat_completion(current_messages, temperature=temperature, max_tokens=max_tokens)
+            choice = data['choices'][0]
+            msg = choice['message']
+            content = msg.get('content') or msg.get('reasoning_content') or ''
+            if content:
+                parts.append(content)
+
+            if choice.get('finish_reason') != 'length':
+                break
+
+            partial = ''.join(parts)
+            current_messages = [
+                *messages,
+                {'role': 'assistant', 'content': partial},
+                {
+                    'role': 'user',
+                    'content': 'Continue exactly from the next missing characters. Return only the continuation, without repeating, restarting, or summarizing.'
+                },
+            ]
+
+        return ''.join(parts).strip()
 
     async def chat_json(self, messages, temperature: float, max_tokens: int):
         text = await self.chat(messages, temperature=temperature, max_tokens=max_tokens)

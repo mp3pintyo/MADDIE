@@ -16,7 +16,8 @@ def default_advisors():
     return [
         {
             'id': 'ai-engineer', 'name': 'AI-mérnök', 'title': 'Rendszer és megvalósítás', 'description': 'Skálázás, modellek, kockázatok, technikai megvalósíthatóság.',
-            'avatar': '/app/static/avatars/ai-engineer.svg', 'accent_color': '#5b8def', 'voice_mode': 'instruct', 'voice_instruct': 'male, low pitch',
+            'avatar': '/app/static/avatars/ai-engineer.svg', 'accent_color': '#5b8def', 'voice_mode': 'clone', 'voice_instruct': 'male, low pitch',
+            'ref_audio': 'source/02_omnivoice/sajat_hang_v1-8sec_24k_mono.wav', 'ref_text': 'A hónap első felében írtunk arról, hogy nem tudni mikor kerülhetnek piacra a gépek. De úgy néz ki, hogy nem kellett sokáig várni rájuk.',
             'llm_prompt': 'Te egy tapasztalt AI-mérnök vagy. Rendszerszinten gondolkodsz, szereted a trade-offokat, a megbízhatóságot, a mérést és a fokozatos bevezetést.'
         },
         {
@@ -84,6 +85,8 @@ class AppContainer:
             speed=self.settings.omnivoice_speed,
             num_step=self.settings.omnivoice_num_step,
             device=self.settings.omnivoice_device,
+            base_url=self.settings.omnivoice_base_url,
+            timeout_seconds=self.settings.request_timeout_seconds,
         ) if self.settings.omnivoice_enabled else None
 
 

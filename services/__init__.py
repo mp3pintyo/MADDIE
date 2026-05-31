@@ -1,0 +1,1 @@
+"""MADDIE auxiliary service package."""

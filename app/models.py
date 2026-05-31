@@ -18,7 +18,7 @@ class Advisor(BaseModel):
 
 
 class AppSettings(BaseModel):
-    llama_base_url: str = 'http://172.31.48.1:8080'
+    llama_base_url: str = 'http://0.0.0.0:8080'
     llama_model: str = 'Qwen3.6-27B-IQ4_NL.gguf'
     request_timeout_seconds: int = 600
     temperature: float = 0.7
@@ -27,6 +27,7 @@ class AppSettings(BaseModel):
     opening_rounds: int = 2
     closure_extra_turns: int = 2
     omnivoice_enabled: bool = True
+    omnivoice_base_url: str = 'http://127.0.0.1:8010'
     omnivoice_model: str = 'k2-fsa/OmniVoice'
     omnivoice_language: str = 'hu'
     omnivoice_speed: float = 1.0

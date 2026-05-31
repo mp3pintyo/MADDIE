@@ -1,7 +1,10 @@
 import asyncio
 import json
 import time
+import traceback
 from pathlib import Path
+
+from .config import LOGS_DIR
 from .llm_client import LlamaCppClient
 from .models import DebateEvent
 
@@ -38,6 +41,18 @@ class DebateEngine:
 
     def roster_text(self, advisors):
         return "\n".join([f"- {a.name} ({a.title}): {a.description}" for a in advisors])
+
+    def format_error(self, exc: Exception) -> str:
+        message = str(exc).strip()
+        if message:
+            return message
+        return f'{exc.__class__.__name__} (nincs részletes hibaüzenet)'
+
+    def write_error_log(self, session, exc: Exception) -> Path:
+        log_path = LOGS_DIR / f'debate-{session.id}.log'
+        details = traceback.format_exc()
+        log_path.write_text(details, encoding='utf-8')
+        return log_path
 
     async def generate_turn(self, session, advisor, round_index, round_label, transcript_excerpt):
         selected = [self.advisors[x] for x in session.advisor_ids]
@@ -149,6 +164,7 @@ Requirements:
 
     async def write_artifacts(self, session, summary):
         out_dir = session.ensure_dir()
+        export_warnings = []
         transcript_path = out_dir / 'transcript.txt'
         transcript_path.write_text(self.transcript_text(session), encoding='utf-8')
         summary_path = out_dir / 'summary.md'
@@ -182,8 +198,17 @@ Requirements:
             concat_list = out_dir / 'podcast_concat.txt'
             concat_list.write_text("\n".join([f"file '{Path(__file__).resolve().parent.parent / w}'" for w in wavs]), encoding='utf-8')
             podcast_path = out_dir / 'podcast.wav'
-            proc = await asyncio.create_subprocess_exec('ffmpeg', '-y', '-f', 'concat', '-safe', '0', '-i', str(concat_list), '-c', 'copy', str(podcast_path), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-            await proc.communicate()
+            try:
+                proc = await asyncio.create_subprocess_exec('ffmpeg', '-y', '-f', 'concat', '-safe', '0', '-i', str(concat_list), '-c', 'copy', str(podcast_path), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+                _, stderr = await proc.communicate()
+                if proc.returncode != 0:
+                    stderr_text = stderr.decode('utf-8', errors='ignore').strip()
+                    stderr_line = stderr_text.splitlines()[-1] if stderr_text else f'ffmpeg exit code {proc.returncode}'
+                    export_warnings.append(f'Podcast export hiba: {stderr_line}')
+                    podcast_path = None
+            except Exception as exc:
+                export_warnings.append(f'Podcast export hiba: {self.format_error(exc)}')
+                podcast_path = None
         session.final_payload = {
             'summary': summary,
             'transcript_url': f"/app/generated/debates/{session.id}/transcript.txt",
@@ -191,6 +216,7 @@ Requirements:
             'podcast_url': f"/app/generated/debates/{session.id}/podcast.wav" if podcast_path and podcast_path.exists() else None,
             'scores': session.scores,
         }
+        return export_warnings
 
     async def run(self, session):
         session.status = 'running'
@@ -222,12 +248,16 @@ Requirements:
                     break
             await self.emit(session, 'status', content='Összegzés készül...')
             summary = await self.summarize(session)
-            await self.write_artifacts(session, summary)
+            export_warnings = await self.write_artifacts(session, summary)
+            for warning in export_warnings:
+                await self.emit(session, 'warning', content=warning)
             await self.emit(session, 'summary', content=summary.get('overview', ''), meta={**session.final_payload, 'summary': summary})
             session.status = 'completed'
             await self.emit(session, 'complete', content='A vita lezárult.', meta=session.final_payload)
         except Exception as exc:
+            error_message = self.format_error(exc)
+            error_log_path = self.write_error_log(session, exc)
             session.status = 'failed'
-            session.final_payload = {'error': str(exc), 'scores': session.scores}
-            await self.emit(session, 'warning', content=f'Hiba történt a vita közben: {exc}')
+            session.final_payload = {'error': error_message, 'scores': session.scores, 'error_log': str(error_log_path.relative_to(Path(__file__).resolve().parent.parent))}
+            await self.emit(session, 'warning', content=f'Hiba történt a vita közben: {error_message}. Részletek: {session.final_payload["error_log"]}')
             await self.emit(session, 'complete', content='A vita hibával leállt.', meta=session.final_payload)

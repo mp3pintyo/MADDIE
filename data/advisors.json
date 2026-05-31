@@ -7,10 +7,10 @@
     "avatar": "/app/static/avatars/ai-engineer.svg",
     "accent_color": "#5b8def",
     "llm_prompt": "Te egy tapasztalt AI-mérnök vagy. Rendszerszinten gondolkodsz, szereted a trade-offokat, a megbízhatóságot, a mérést és a fokozatos bevezetést.",
-    "voice_mode": "instruct",
+    "voice_mode": "clone",
     "voice_instruct": "male, low pitch",
-    "ref_audio": "",
-    "ref_text": "",
+    "ref_audio": "source/02_omnivoice/sajat_hang_v1-8sec_24k_mono.wav",
+    "ref_text": "A hónap első felében írtunk arról, hogy nem tudni mikor kerülhetnek piacra a gépek. De úgy néz ki, hogy nem kellett sokáig várni rájuk.",
     "enabled": true
   },
   {

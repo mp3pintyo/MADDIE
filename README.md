@@ -71,15 +71,16 @@ A vita közben a megszólalás szövege azonnal megjelenik, majd alatta automati
 - Frontend: HTML + CSS + vanilla JavaScript
 - Backend: FastAPI
 - LLM backend: llama.cpp OpenAI-compatible API
-- TTS backend: OmniVoice worker process
+- TTS backend: OmniVoice HTTP service Dockerből, lokális worker fallbackkal
 - Audio export: ffmpeg
 
 Fő komponensek:
 - `app/main.py` — API + statikus frontend kiszolgálás
 - `app/debate_engine.py` — vita motor, szekvenciális advisor-vezérlés, összegzés, export
 - `app/llm_client.py` — llama.cpp kliens, JSON-javító fallbackkal
-- `app/tts_manager.py` — tartós OmniVoice worker kezelés
-- `scripts/omnivoice_worker.py` — egyetlen betöltött TTS worker a gyorsabb többkörös futáshoz
+- `app/tts_manager.py` — OmniVoice HTTP kliens + lokális worker fallback
+- `services/omnivoice_api.py` — külön FastAPI-alapú OmniVoice szolgáltatás
+- `scripts/omnivoice_worker.py` — lokális fallback worker
 - `app/static/` — UI
 
 ## Követelmények
@@ -87,20 +88,40 @@ Fő komponensek:
 - Python 3.12+
 - ffmpeg
 - futó llama.cpp OpenAI-kompatibilis szerver
-- helyi OmniVoice környezet
+- Docker Desktop vagy helyi OmniVoice környezet
 
 A jelenlegi alapértelmezett modell-végpont:
-- `http://172.31.48.1:8080`
+- `http://0.0.0.0:8080`
+
+Megjegyzés:
+- a kliensoldali hívásoknál a `0.0.0.0` automatikusan `127.0.0.1`-re normalizálódik, így Windows alatt is stabilan elérhető a helyi llama.cpp szerver
 
 ## Gyors indítás
 
+Windows PowerShell:
+
+```powershell
+Set-Location D:\AI\MADDIE
+.\run.ps1
+```
+
+Ha a 8000-es port foglalt, a script automatikusan a következő szabad portra lép és kiírja a használt URL-t.
+
+Linux/macOS:
+
 ```bash
-cd /home/hermes/projects/2026-05-31_150040_multi-advisors-debate-webapp
 ./run.sh
 ```
 
+OmniVoice szolgáltatás Dockerből:
+
+```powershell
+docker compose up --build omnivoice
+```
+
 App:
-- `http://127.0.0.1:8000`
+- alapértelmezésben `http://127.0.0.1:8000`
+- Windows alatt, portütközés esetén a `run.ps1` a következő szabad portot választja
 
 ## Konfiguráció
 
@@ -115,10 +136,29 @@ Fontos mezők:
 - `opening_rounds`
 - `closure_extra_turns`
 - `omnivoice_enabled`
+- `omnivoice_base_url`
 - `omnivoice_language`
 - `omnivoice_speed`
 - `omnivoice_num_step`
 - `omnivoice_device`
+
+## Windows + Docker futtatás
+
+1. Indítsd el a llama.cpp szervert úgy, hogy a hoston a `http://0.0.0.0:8080` címen figyeljen.
+2. Indítsd el az OmniVoice szolgáltatást a gyökérkönyvtárból: `docker compose up --build omnivoice`.
+3. Futtasd az alkalmazást PowerShellből: `.\run.ps1`.
+4. Nyisd meg a PowerShellben kiírt helyi URL-t. Ha nincs portütközés, ez `http://127.0.0.1:8000` lesz.
+
+CPU-s Docker azonnal működik. NVIDIA GPU-hoz a compose build argot és az `OMNIVOICE_DEVICE` változót kell felülírni.
+
+## Hangklónozás
+
+- A projektbe bemásolt hangminta itt van: `source/02_omnivoice/sajat_hang_v1-8sec_24k_mono.wav`
+- A hangminta leirata itt van: `source/02_omnivoice/sajat_hang_v1-8sec.txt`
+- Az `AI-mérnök` advisor alapból ezt a mintát használja `clone` módban.
+- A többi advisor a Settings panelen átállítható `clone` módra ugyanazzal vagy más referenciahanggal.
+- A backend relatív útvonal esetén a repo gyökerétől oldja fel a referenciahangot, majd feltölti azt az OmniVoice szolgáltatásnak.
+- Ha a WAV mellett van megfelelő `.txt` sidecar leirat, azt a backend automatikusan felhasználja `ref_text`-ként, így nem kell minden megszólalásnál újratranszkribálni a mintahangot.
 
 ## Demo flow
 

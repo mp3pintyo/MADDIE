@@ -1,5 +1,5 @@
 {
-  "llama_base_url": "http://172.31.48.1:8080",
+  "llama_base_url": "http://0.0.0.0:8080",
   "llama_model": "Qwen3.6-27B-IQ4_NL.gguf",
   "request_timeout_seconds": 600,
   "temperature": 0.7,
@@ -8,6 +8,7 @@
   "opening_rounds": 2,
   "closure_extra_turns": 2,
   "omnivoice_enabled": true,
+  "omnivoice_base_url": "http://127.0.0.1:8010",
   "omnivoice_model": "k2-fsa/OmniVoice",
   "omnivoice_language": "hu",
   "omnivoice_speed": 1.0,

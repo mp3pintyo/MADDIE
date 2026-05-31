@@ -18,6 +18,7 @@ const els = {
   advisorSettingsList: document.getElementById('advisorSettingsList'),
   settingsBaseUrl: document.getElementById('settingsBaseUrl'),
   settingsModel: document.getElementById('settingsModel'),
+  settingsOmniVoiceUrl: document.getElementById('settingsOmniVoiceUrl'),
   settingsTemp: document.getElementById('settingsTemp'),
   settingsMaxTokens: document.getElementById('settingsMaxTokens'),
   settingsVoiceSpeed: document.getElementById('settingsVoiceSpeed'),
@@ -179,17 +180,20 @@ async function loadSettings() {
   if (!state.selectedAdvisorIds.length) state.selectedAdvisorIds = state.advisors.filter(a => a.enabled).slice(0, 4).map(a => a.id);
   els.settingsBaseUrl.value = state.settings.llama_base_url;
   els.settingsModel.value = state.settings.llama_model;
+  els.settingsOmniVoiceUrl.value = state.settings.omnivoice_base_url || '';
   els.settingsTemp.value = state.settings.temperature;
   els.settingsMaxTokens.value = state.settings.max_tokens_per_turn;
   els.settingsVoiceSpeed.value = state.settings.omnivoice_speed;
   els.settingsNumStep.value = state.settings.omnivoice_num_step;
-  els.modelInfo.textContent = `${state.settings.llama_model} @ ${state.settings.llama_base_url}`;
+  const omniVoiceTarget = state.settings.omnivoice_base_url?.trim() || 'local worker';
+  els.modelInfo.textContent = `${state.settings.llama_model} @ ${state.settings.llama_base_url} | OmniVoice @ ${omniVoiceTarget}`;
   renderAdvisorGrid(); renderAdvisorStrip(); renderAdvisorSettings();
 }
 
 els.saveSettingsBtn.addEventListener('click', async () => {
   state.settings.llama_base_url = els.settingsBaseUrl.value.trim();
   state.settings.llama_model = els.settingsModel.value.trim();
+  state.settings.omnivoice_base_url = els.settingsOmniVoiceUrl.value.trim();
   state.settings.temperature = Number(els.settingsTemp.value);
   state.settings.max_tokens_per_turn = Number(els.settingsMaxTokens.value);
   state.settings.omnivoice_speed = Number(els.settingsVoiceSpeed.value);

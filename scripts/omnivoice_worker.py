@@ -32,22 +32,24 @@ def main():
         try:
             output_path = Path(req['output_path']).expanduser()
             output_path.parent.mkdir(parents=True, exist_ok=True)
+            language = req.get('language') or args.language
+            num_step = int(req.get('num_step') or args.num_step)
             if req.get('voice_mode') == 'clone' and req.get('ref_audio'):
                 audios = model.generate(
                     text=req['text'],
-                    language=args.language,
+                    language=language,
                     ref_audio=req.get('ref_audio') or None,
                     ref_text=req.get('ref_text') or None,
                     speed=args.speed,
-                    num_step=args.num_step,
+                    num_step=num_step,
                 )
             else:
                 audios = model.generate(
                     text=req['text'],
-                    language=args.language,
+                    language=language,
                     instruct=req.get('voice_instruct') or 'female, moderate pitch',
                     speed=args.speed,
-                    num_step=args.num_step,
+                    num_step=num_step,
                 )
             sf.write(output_path, audios[0], model.sampling_rate)
             sys.stdout.write(json.dumps({'request_id': request_id, 'status': 'ok', 'output_path': str(output_path)}, ensure_ascii=False) + '\n')

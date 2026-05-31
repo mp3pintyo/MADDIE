@@ -16,43 +16,43 @@ def default_advisors():
     return [
         {
             'id': 'ai-engineer', 'name': 'AI-mérnök', 'title': 'Rendszer és megvalósítás', 'description': 'Skálázás, modellek, kockázatok, technikai megvalósíthatóság.',
-            'avatar': '/app/static/avatars/ai-engineer.svg', 'accent_color': '#5b8def', 'voice_mode': 'clone', 'voice_instruct': 'male, low pitch',
+            'avatar': '/app/static/avatars/ai-engineer.svg', 'accent_color': '#5b8def', 'voice_mode': 'clone', 'voice_instruct': 'male, low pitch', 'voice_num_step': 6,
             'ref_audio': 'source/02_omnivoice/sajat_hang_v1-8sec_24k_mono.wav', 'ref_text': 'A hónap első felében írtunk arról, hogy nem tudni mikor kerülhetnek piacra a gépek. De úgy néz ki, hogy nem kellett sokáig várni rájuk.',
             'llm_prompt': 'Te egy tapasztalt AI-mérnök vagy. Rendszerszinten gondolkodsz, szereted a trade-offokat, a megbízhatóságot, a mérést és a fokozatos bevezetést.'
         },
         {
             'id': 'artist', 'name': 'Művész', 'title': 'Esztétika és élmény', 'description': 'Hangulat, jelentés, forma, kulturális rezonancia.',
-            'avatar': '/app/static/avatars/artist.svg', 'accent_color': '#d971ff', 'voice_mode': 'instruct', 'voice_instruct': 'female, moderate pitch',
+            'avatar': '/app/static/avatars/artist.svg', 'accent_color': '#d971ff', 'voice_mode': 'instruct', 'voice_instruct': 'female, moderate pitch', 'voice_num_step': None,
             'llm_prompt': 'Te egy művész vagy. Az érzelmi hatást, szimbolikát, formát, ritmust és emberi élményt hangsúlyozod.'
         },
         {
             'id': 'content-creator', 'name': 'Tartalomkészítő', 'title': 'Közönség és kommunikáció', 'description': 'Világos üzenet, figyelem, elérés, narratíva.',
-            'avatar': '/app/static/avatars/content-creator.svg', 'accent_color': '#ff7b54', 'voice_mode': 'instruct', 'voice_instruct': 'female, high pitch',
+            'avatar': '/app/static/avatars/content-creator.svg', 'accent_color': '#ff7b54', 'voice_mode': 'instruct', 'voice_instruct': 'female, high pitch', 'voice_num_step': None,
             'llm_prompt': 'Te egy tapasztalt tartalomkészítő vagy. A közérthetőségre, storytellingre, közönségfigyelemre és terjeszthetőségre figyelsz.'
         },
         {
             'id': 'anthropologist', 'name': 'Antropológus', 'title': 'Kultúra és emberi viselkedés', 'description': 'Szokások, csoportdinamika, jelentések, társadalmi következmények.',
-            'avatar': '/app/static/avatars/anthropologist.svg', 'accent_color': '#6ac47e', 'voice_mode': 'instruct', 'voice_instruct': 'male, middle-aged, moderate pitch',
+            'avatar': '/app/static/avatars/anthropologist.svg', 'accent_color': '#6ac47e', 'voice_mode': 'instruct', 'voice_instruct': 'male, middle-aged, moderate pitch', 'voice_num_step': None,
             'llm_prompt': 'Te antropológus vagy. A kulturális kontextust, emberi rítusokat, normákat és társadalmi mellékhatásokat keresed.'
         },
         {
             'id': 'product-manager', 'name': 'Termékmenedzser', 'title': 'Prioritás és döntés', 'description': 'Felhasználói érték, scope, mérőszámok, roadmap.',
-            'avatar': '/app/static/avatars/product-manager.svg', 'accent_color': '#f2c14e', 'voice_mode': 'instruct', 'voice_instruct': 'female, low pitch',
+            'avatar': '/app/static/avatars/product-manager.svg', 'accent_color': '#f2c14e', 'voice_mode': 'instruct', 'voice_instruct': 'female, low pitch', 'voice_num_step': None,
             'llm_prompt': 'Te egy termékmenedzser vagy. A felhasználói problémát, prioritást, scope-ot, validációt és kockázatcsökkentést hangsúlyozod.'
         },
         {
             'id': 'greek-philosopher', 'name': 'Ókori görög filozófus', 'title': 'Alapelv és bölcsesség', 'description': 'Első elvek, erények, logika, jó élet.',
-            'avatar': '/app/static/avatars/greek-philosopher.svg', 'accent_color': '#8c7ae6', 'voice_mode': 'instruct', 'voice_instruct': 'elderly, male, very low pitch',
+            'avatar': '/app/static/avatars/greek-philosopher.svg', 'accent_color': '#8c7ae6', 'voice_mode': 'instruct', 'voice_instruct': 'elderly, male, very low pitch', 'voice_num_step': None,
             'llm_prompt': 'Te egy ókori görög filozófus vagy. Első elvekből, logikából és erényetikai nézőpontból érvelsz, röviden de mélyen.'
         },
         {
             'id': 'behavioral-economist', 'name': 'Viselkedési közgazdász', 'title': 'Ösztönzők és torzítások', 'description': 'Döntési torzítások, incentive-ek, valós emberi reakciók.',
-            'avatar': '/app/static/avatars/behavioral-economist.svg', 'accent_color': '#00b894', 'voice_mode': 'instruct', 'voice_instruct': 'male, young adult, moderate pitch',
+            'avatar': '/app/static/avatars/behavioral-economist.svg', 'accent_color': '#00b894', 'voice_mode': 'instruct', 'voice_instruct': 'male, young adult, moderate pitch', 'voice_num_step': None,
             'llm_prompt': 'Te viselkedési közgazdász vagy. A döntési torzításokat, ösztönzőket, incentive-hibákat és nem várt reakciókat keresed.'
         },
         {
             'id': 'futurist', 'name': 'Jövőkutató', 'title': 'Trendek és hosszú táv', 'description': 'Másodrendű hatások, forgatókönyvek, stratégiai időtáv.',
-            'avatar': '/app/static/avatars/futurist.svg', 'accent_color': '#00cec9', 'voice_mode': 'instruct', 'voice_instruct': 'female, young adult, moderate pitch',
+            'avatar': '/app/static/avatars/futurist.svg', 'accent_color': '#00cec9', 'voice_mode': 'instruct', 'voice_instruct': 'female, young adult, moderate pitch', 'voice_num_step': None,
             'llm_prompt': 'Te jövőkutató vagy. Trendeket, másodrendű következményeket, forgatókönyveket és stratégiai időtávokat vizsgálsz.'
         },
     ]

@@ -120,7 +120,7 @@ class OmniVoiceManager:
             await self.proc.stdin.drain()
         await self.proc.wait()
 
-    async def _synthesize_via_service(self, text: str, voice_mode: str, voice_instruct: str, ref_audio: str, ref_text: str, prefix: str):
+    async def _synthesize_via_service(self, text: str, voice_mode: str, voice_instruct: str, ref_audio: str, ref_text: str, prefix: str, language: str | None = None, num_step: int | None = None):
         req_id = str(uuid.uuid4())
         out_path = GENERATED_AUDIO_DIR / f'{prefix}-{req_id}.wav'
         resolved_ref_audio = _resolve_ref_audio_path(ref_audio)
@@ -133,9 +133,9 @@ class OmniVoiceManager:
             'voice_mode': voice_mode,
             'voice_instruct': voice_instruct,
             'ref_text': resolved_ref_text,
-            'language': self.language,
+            'language': language or self.language,
             'speed': str(self.speed),
-            'num_step': str(self.num_step),
+            'num_step': str(num_step if num_step is not None else self.num_step),
         }
         timeout = httpx.Timeout(self.timeout_seconds, connect=30.0)
         ref_handle = None
@@ -155,11 +155,11 @@ class OmniVoiceManager:
             if ref_handle:
                 ref_handle.close()
 
-    async def synthesize(self, text: str, voice_mode: str, voice_instruct: str, ref_audio: str, ref_text: str, prefix: str):
+    async def synthesize(self, text: str, voice_mode: str, voice_instruct: str, ref_audio: str, ref_text: str, prefix: str, language: str | None = None, num_step: int | None = None):
         if not text.strip():
             return None
         if self.base_url:
-            return await self._synthesize_via_service(text, voice_mode, voice_instruct, ref_audio, ref_text, prefix)
+            return await self._synthesize_via_service(text, voice_mode, voice_instruct, ref_audio, ref_text, prefix, language=language, num_step=num_step)
 
         resolved_ref_audio = _resolve_ref_audio_path(ref_audio)
         resolved_ref_text = _resolve_ref_text(ref_audio, ref_text)
@@ -179,6 +179,8 @@ class OmniVoiceManager:
                 'voice_instruct': voice_instruct,
                 'ref_audio': str(resolved_ref_audio) if resolved_ref_audio else '',
                 'ref_text': resolved_ref_text,
+                'language': language or self.language,
+                'num_step': num_step if num_step is not None else self.num_step,
             }
             self.proc.stdin.write((json.dumps(payload, ensure_ascii=False) + '\n').encode('utf-8'))
             await self.proc.stdin.drain()

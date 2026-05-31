@@ -166,10 +166,17 @@ function renderAdvisorSettings() {
         <label>Voice instruct<input data-field='voice_instruct' value="${esc(advisor.voice_instruct)}"></label>
       </div>
       <div class='row'>
+        <label>Voice num_step<input data-field='voice_num_step' data-number='int' type='number' value="${advisor.voice_num_step ?? ''}"></label>
         <label>Ref audio<input data-field='ref_audio' value="${esc(advisor.ref_audio || '')}"></label>
         <label>Ref text<input data-field='ref_text' value="${esc(advisor.ref_text || '')}"></label>
       </div>`;
-    card.querySelectorAll('[data-field]').forEach(input => input.addEventListener('input', () => { advisor[input.dataset.field] = input.value; }));
+    card.querySelectorAll('[data-field]').forEach(input => input.addEventListener('input', () => {
+      if (input.dataset.number === 'int') {
+        advisor[input.dataset.field] = input.value === '' ? null : Number.parseInt(input.value, 10);
+        return;
+      }
+      advisor[input.dataset.field] = input.value;
+    }));
     els.advisorSettingsList.appendChild(card);
   });
 }

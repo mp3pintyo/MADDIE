@@ -9,6 +9,7 @@
     "llm_prompt": "Te egy tapasztalt AI-mérnök vagy. Rendszerszinten gondolkodsz, szereted a trade-offokat, a megbízhatóságot, a mérést és a fokozatos bevezetést.",
     "voice_mode": "clone",
     "voice_instruct": "male, low pitch",
+    "voice_num_step": 6,
     "ref_audio": "source/02_omnivoice/sajat_hang_v1-8sec_24k_mono.wav",
     "ref_text": "A hónap első felében írtunk arról, hogy nem tudni mikor kerülhetnek piacra a gépek. De úgy néz ki, hogy nem kellett sokáig várni rájuk.",
     "enabled": true
@@ -23,6 +24,7 @@
     "llm_prompt": "Te egy művész vagy. Az érzelmi hatást, szimbolikát, formát, ritmust és emberi élményt hangsúlyozod.",
     "voice_mode": "instruct",
     "voice_instruct": "female, moderate pitch",
+    "voice_num_step": null,
     "ref_audio": "",
     "ref_text": "",
     "enabled": true
@@ -37,6 +39,7 @@
     "llm_prompt": "Te egy tapasztalt tartalomkészítő vagy. A közérthetőségre, storytellingre, közönségfigyelemre és terjeszthetőségre figyelsz.",
     "voice_mode": "instruct",
     "voice_instruct": "female, high pitch",
+    "voice_num_step": null,
     "ref_audio": "",
     "ref_text": "",
     "enabled": true
@@ -51,6 +54,7 @@
     "llm_prompt": "Te antropológus vagy. A kulturális kontextust, emberi rítusokat, normákat és társadalmi mellékhatásokat keresed.",
     "voice_mode": "instruct",
     "voice_instruct": "male, middle-aged, moderate pitch",
+    "voice_num_step": null,
     "ref_audio": "",
     "ref_text": "",
     "enabled": true
@@ -65,6 +69,7 @@
     "llm_prompt": "Te egy termékmenedzser vagy. A felhasználói problémát, prioritást, scope-ot, validációt és kockázatcsökkentést hangsúlyozod.",
     "voice_mode": "instruct",
     "voice_instruct": "female, low pitch",
+    "voice_num_step": null,
     "ref_audio": "",
     "ref_text": "",
     "enabled": true
@@ -79,6 +84,7 @@
     "llm_prompt": "Te egy ókori görög filozófus vagy. Első elvekből, logikából és erényetikai nézőpontból érvelsz, röviden de mélyen.",
     "voice_mode": "instruct",
     "voice_instruct": "elderly, male, very low pitch",
+    "voice_num_step": null,
     "ref_audio": "",
     "ref_text": "",
     "enabled": true
@@ -93,6 +99,7 @@
     "llm_prompt": "Te viselkedési közgazdász vagy. A döntési torzításokat, ösztönzőket, incentive-hibákat és nem várt reakciókat keresed.",
     "voice_mode": "instruct",
     "voice_instruct": "male, young adult, moderate pitch",
+    "voice_num_step": null,
     "ref_audio": "",
     "ref_text": "",
     "enabled": true
@@ -107,6 +114,7 @@
     "llm_prompt": "Te jövőkutató vagy. Trendeket, másodrendű következményeket, forgatókönyveket és stratégiai időtávokat vizsgálsz.",
     "voice_mode": "instruct",
     "voice_instruct": "female, young adult, moderate pitch",
+    "voice_num_step": null,
     "ref_audio": "",
     "ref_text": "",
     "enabled": true

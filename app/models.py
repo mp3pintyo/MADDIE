@@ -12,6 +12,7 @@ class Advisor(BaseModel):
     llm_prompt: str
     voice_mode: Literal['instruct', 'clone'] = 'instruct'
     voice_instruct: str = ''
+    voice_num_step: int | None = None
     ref_audio: str = ''
     ref_text: str = ''
     enabled: bool = True

@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 import time
 import traceback
 from pathlib import Path
@@ -42,6 +43,31 @@ class DebateEngine:
     def roster_text(self, advisors):
         return "\n".join([f"- {a.name} ({a.title}): {a.description}" for a in advisors])
 
+    def message_events(self, session):
+        return [evt for evt in session.events if evt.type == 'message' and evt.content]
+
+    def format_message_list(self, events, fallback: str):
+        if not events:
+            return fallback
+        return "\n".join([f"- {evt.advisor_name}: {evt.content}" for evt in events])
+
+    def detect_topic_language(self, text: str):
+        if re.search(r'[\u4e00-\u9fff]', text):
+            return {'prompt_name': 'Chinese', 'summary_name': 'Chinese', 'tts_code': 'zh'}
+
+        lowered = f" {text.casefold()} "
+        hungarian_markers = [' és ', ' hogy ', ' nem ', ' az ', ' egy ', ' mi ', ' mit ', ' miért ', ' legyen ', ' fontos ']
+        if any(ch in lowered for ch in 'áéíóöőúüű') or any(marker in lowered for marker in hungarian_markers):
+            return {'prompt_name': 'Hungarian', 'summary_name': 'Hungarian', 'tts_code': 'hu'}
+
+        english_markers = [' the ', ' and ', ' why ', ' what ', ' should ', ' important ', ' is ', ' are ', ' in ']
+        if any(marker in lowered for marker in english_markers):
+            return {'prompt_name': 'English', 'summary_name': 'English', 'tts_code': 'en'}
+
+        fallback_code = self.settings.omnivoice_language or 'hu'
+        fallback_name = {'hu': 'Hungarian', 'en': 'English', 'zh': 'Chinese'}.get(fallback_code, 'the same language as the meeting topic')
+        return {'prompt_name': fallback_name, 'summary_name': fallback_name, 'tts_code': fallback_code}
+
     def format_error(self, exc: Exception) -> str:
         message = str(exc).strip()
         if message:
@@ -54,9 +80,12 @@ class DebateEngine:
         log_path.write_text(details, encoding='utf-8')
         return log_path
 
-    async def generate_turn(self, session, advisor, round_index, round_label, transcript_excerpt):
+    async def generate_turn(self, session, advisor, round_index, round_label, transcript_excerpt, language_context):
         selected = [self.advisors[x] for x in session.advisor_ids]
-        system = advisor.llm_prompt.strip() + "\n\nYou are participating in a constructive, high-signal advisory roundtable. Stay in character. Reply in the same language as the user's topic. Use short, information-dense paragraphs. Avoid filler and repetition. Reference earlier points when useful, but do not quote excessively."
+        message_events = self.message_events(session)
+        own_history = self.format_message_list([evt for evt in message_events if evt.advisor_id == advisor.id][-2:], 'You have not spoken yet.')
+        others_history = self.format_message_list([evt for evt in message_events if evt.advisor_id != advisor.id][-6:], 'No one else has spoken yet.')
+        system = advisor.llm_prompt.strip() + f"\n\nYou are participating in a live, high-signal advisory roundtable. Stay in character. The meeting language is {language_context['prompt_name']}. Speak to the other advisors, not into the void. Maintain memory of what you already said and what the others already said. Be concise, direct, and conversational."
         user = f'''Meeting topic:
 {session.topic}
 
@@ -69,15 +98,24 @@ Current round:
 Support scores so far:
 {json.dumps(session.scores, ensure_ascii=False)}
 
+Your earlier statements:
+{own_history}
+
+Other advisors already said:
+{others_history}
+
 Recent transcript:
 {transcript_excerpt or 'No previous messages yet.'}
 
 Your task:
 - Give your perspective from your persona.
-- React to 1-2 concrete ideas from others if there are prior messages.
+- If others have already spoken, explicitly react to at least one named advisor and say whether you agree, disagree, refine, or question their point.
+- Remember your own earlier position and stay consistent unless you explain why you changed your mind.
 - Add one practical implication, risk, opportunity, or recommendation.
 - If this is a closing turn, end with your most important takeaway.
-- Prefer 2-4 short paragraphs.
+- Use 1 to 4 sentences total. One-word answers are allowed if they are genuinely enough.
+- Do not exceed 4 sentences.
+- No bullet list, no markdown, no stage directions.
 
 Return only your spoken contribution.'''
         messages = [
@@ -97,7 +135,7 @@ Return only your spoken contribution.'''
                 max_tokens=max(120, int(self.settings.max_tokens_per_turn * 0.65)),
             )
 
-    async def synthesize_message_audio(self, session, event):
+    async def synthesize_message_audio(self, session, event, language_context):
         if not self.tts:
             return None
         advisor = self.advisors[event.advisor_id]
@@ -109,6 +147,8 @@ Return only your spoken contribution.'''
                 ref_audio=advisor.ref_audio,
                 ref_text=advisor.ref_text,
                 prefix=f"{session.id}-{advisor.id}",
+                language=language_context['tts_code'],
+                num_step=advisor.voice_num_step,
             )
             if audio_path:
                 rel = Path(audio_path).resolve().relative_to(Path(__file__).resolve().parent.parent)
@@ -126,7 +166,7 @@ Return only your spoken contribution.'''
         session.waiting_for_client = False
         session.waiting_event_id = None
 
-    async def summarize(self, session):
+    async def summarize(self, session, language_context):
         selected = [self.advisors[x] for x in session.advisor_ids]
         transcript = self.transcript_text(session)
         system = 'You are an expert discussion synthesizer. Output only valid JSON.'
@@ -151,7 +191,7 @@ Create a JSON object with this exact schema:
 }}
 
 Requirements:
-- Write in Hungarian.
+- Write in {language_context['summary_name']}.
 - Be concrete, not generic.
 - Capture what each advisor actually emphasized.
 - Keep strongest_ideas concise but specific.
@@ -224,6 +264,7 @@ Requirements:
         try:
             await self.emit(session, 'status', content='A vita elindult.')
             selected = [self.advisors[x] for x in session.advisor_ids if x in self.advisors]
+            language_context = self.detect_topic_language(session.topic)
             total_rounds = max(1, self.settings.opening_rounds)
             stop_now = False
             for round_index in range(total_rounds):
@@ -235,9 +276,9 @@ Requirements:
                             stop_now = True
                             break
                     transcript_excerpt = self.transcript_text(session).split("\n\n")[-8:]
-                    turn = await self.generate_turn(session, advisor, round_index + 1, 'zárókör' if session.stop_requested else f"{round_index + 1}. kör", "\n\n".join(transcript_excerpt))
+                    turn = await self.generate_turn(session, advisor, round_index + 1, 'zárókör' if session.stop_requested else f"{round_index + 1}. kör", "\n\n".join(transcript_excerpt), language_context)
                     event = await self.emit(session, 'message', content=turn, advisor=advisor, meta={'round': round_index + 1, 'closing': bool(session.stop_requested)})
-                    audio_event = await self.synthesize_message_audio(session, event)
+                    audio_event = await self.synthesize_message_audio(session, event, language_context)
                     if audio_event:
                         await self.wait_for_client_continue(session, audio_event.meta.get('event_id'))
                     elif self.tts:
@@ -247,7 +288,7 @@ Requirements:
                 if stop_now:
                     break
             await self.emit(session, 'status', content='Összegzés készül...')
-            summary = await self.summarize(session)
+            summary = await self.summarize(session, language_context)
             export_warnings = await self.write_artifacts(session, summary)
             for warning in export_warnings:
                 await self.emit(session, 'warning', content=warning)

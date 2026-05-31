@@ -6,6 +6,7 @@ import httpx
 
 
 THINKING_TAG_RE = re.compile(r'<think>.*?</think>', re.IGNORECASE | re.DOTALL)
+QUOTED_CANDIDATE_RE = re.compile(r'["“](.{20,}?)["”]', re.DOTALL)
 
 
 def _normalize_loopback_base_url(base_url: str) -> str:
@@ -65,6 +66,104 @@ def _reasoning_message_content(message: dict) -> str:
     return _flatten_message_field(message.get('reasoning_content')).strip()
 
 
+def _looks_like_meta_text(text: str) -> bool:
+    lowered = text.strip().casefold()
+    meta_markers = (
+        'thinking process',
+        'here is a thinking process',
+        'analyze user input',
+        'analyze the request',
+        'check constraints',
+        'constraints met',
+        'final output generation',
+        'output generation',
+        'draft construction',
+        'drafting the response',
+        'self-correction',
+        'the user wants me',
+        'my response should',
+        'persona:',
+        'task requirements',
+        'final check',
+        'all constraints met',
+    )
+    return any(marker in lowered for marker in meta_markers)
+
+
+def _clean_reasoning_candidate(text: str) -> str:
+    cleaned = THINKING_TAG_RE.sub('', text).strip()
+    cleaned = cleaned.strip('`')
+    cleaned = cleaned.strip('"“”')
+    cleaned = ' '.join(part.strip() for part in cleaned.splitlines() if part.strip())
+    return cleaned.strip()
+
+
+def _extract_answer_from_reasoning(reasoning: str) -> str:
+    if not reasoning:
+        return ''
+
+    candidates = []
+    for match in QUOTED_CANDIDATE_RE.findall(reasoning):
+        candidate = _clean_reasoning_candidate(match)
+        if candidate and not _looks_like_meta_text(candidate):
+            candidates.append(candidate)
+
+    lines = reasoning.splitlines()
+    keyword_markers = (
+        'tighter version',
+        'draft',
+        'final polish',
+        'final output',
+        'output generation',
+        'mental refinement',
+    )
+    stop_markers = (
+        'check constraints',
+        'self-correction',
+        'final check',
+        'constraints met',
+        'all constraints met',
+        'done.',
+        'proceeds.',
+        'ready.',
+    )
+    collect = False
+    buffer = []
+
+    for raw_line in lines:
+        line = raw_line.strip()
+        normalized = line.strip('-* ').casefold()
+
+        if collect:
+            if not line or re.match(r'^\d+\.', normalized) or any(marker in normalized for marker in stop_markers):
+                candidate = _clean_reasoning_candidate(' '.join(buffer))
+                if candidate and not _looks_like_meta_text(candidate):
+                    candidates.append(candidate)
+                buffer = []
+                collect = False
+            else:
+                buffer.append(line)
+                continue
+
+        if any(marker in normalized for marker in keyword_markers):
+            if ':' in line:
+                trailing = _clean_reasoning_candidate(line.split(':', 1)[1])
+                if trailing and not _looks_like_meta_text(trailing):
+                    candidates.append(trailing)
+                    continue
+            collect = True
+
+    if buffer:
+        candidate = _clean_reasoning_candidate(' '.join(buffer))
+        if candidate and not _looks_like_meta_text(candidate):
+            candidates.append(candidate)
+
+    for candidate in reversed(candidates):
+        if len(candidate) >= 20:
+            return candidate
+    return ''
+
+
 class LlamaCppClient:
     def __init__(self, base_url: str, model: str, timeout_seconds: int = 600):
         self.base_url = _normalize_loopback_base_url(base_url)
@@ -95,6 +194,7 @@ class LlamaCppClient:
         parts = []
         token_budget = max_tokens
         saw_reasoning_only = False
+        reasoning_candidates = []
 
         for _ in range(4):
             data = await self._chat_completion(current_messages, temperature=temperature, max_tokens=token_budget)
@@ -106,6 +206,7 @@ class LlamaCppClient:
                 parts.append(visible_content)
             elif reasoning_content:
                 saw_reasoning_only = True
+                reasoning_candidates.append(reasoning_content)
 
             if choice.get('finish_reason') != 'length' and parts:
                 break
@@ -140,11 +241,26 @@ class LlamaCppClient:
                     'content': 'Return only the final answer. Do not include chain-of-thought, internal reasoning, or thinking text.'
                 },
             ]
-            rescue_budget = max(128, min(1024, max_tokens))
-            rescue_data = await self._chat_completion(rescue_messages, temperature=temperature, max_tokens=rescue_budget)
-            rescue_content = _visible_message_content(rescue_data['choices'][0]['message'])
-            if rescue_content:
-                return rescue_content
+            rescue_budget = max(1024, max_tokens)
+            for _ in range(2):
+                rescue_data = await self._chat_completion(rescue_messages, temperature=0.0, max_tokens=rescue_budget)
+                rescue_message = rescue_data['choices'][0]['message']
+                rescue_content = _visible_message_content(rescue_message)
+                if rescue_content:
+                    return rescue_content
+
+                rescue_reasoning = _reasoning_message_content(rescue_message)
+                if rescue_reasoning:
+                    reasoning_candidates.append(rescue_reasoning)
+
+                if rescue_data['choices'][0].get('finish_reason') != 'length':
+                    break
+                rescue_budget = min(max(rescue_budget * 2, 1536), 4096)
+
+            for reasoning in reversed(reasoning_candidates):
+                extracted = _extract_answer_from_reasoning(reasoning)
+                if extracted:
+                    return extracted
 
         return ''.join(parts).strip()
 

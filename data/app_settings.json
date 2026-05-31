@@ -12,7 +12,7 @@
   "omnivoice_model": "k2-fsa/OmniVoice",
   "omnivoice_language": "hu",
   "omnivoice_speed": 1.0,
-  "omnivoice_num_step": 8,
+  "omnivoice_num_step": 12,
   "omnivoice_device": "cuda:0",
   "meeting_name": "Tanácsadói kör"
 }

@@ -21,6 +21,7 @@ class DebateSession:
     queue: asyncio.Queue = field(default_factory=asyncio.Queue)
     final_payload: dict | None = None
     artifact_dir: Path | None = None
+    voice_references: dict[str, dict[str, str]] = field(default_factory=dict)
     waiting_for_client: bool = False
     waiting_event_id: str | None = None
     continue_event: asyncio.Event = field(default_factory=asyncio.Event)

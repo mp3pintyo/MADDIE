@@ -55,6 +55,40 @@ class DebateEngine:
             return fallback
         return "\n".join([f"- {evt.advisor_name}: {evt.content}" for evt in events])
 
+    def resolve_tts_voice_profile(self, session, advisor, reference_text: str):
+        if advisor.voice_mode != 'instruct':
+            return {
+                'voice_mode': advisor.voice_mode,
+                'voice_instruct': advisor.voice_instruct,
+                'ref_audio': advisor.ref_audio,
+                'ref_text': advisor.ref_text,
+            }
+
+        cached_reference = session.voice_references.get(advisor.id)
+        if not cached_reference:
+            return {
+                'voice_mode': advisor.voice_mode,
+                'voice_instruct': advisor.voice_instruct,
+                'ref_audio': advisor.ref_audio,
+                'ref_text': advisor.ref_text,
+            }
+
+        return {
+            'voice_mode': 'clone',
+            'voice_instruct': advisor.voice_instruct,
+            'ref_audio': cached_reference.get('ref_audio', ''),
+            'ref_text': cached_reference.get('ref_text') or reference_text,
+        }
+
+    def remember_generated_voice_reference(self, session, advisor, audio_path: str, reference_text: str):
+        if advisor.voice_mode != 'instruct' or advisor.id in session.voice_references or not audio_path:
+            return
+
+        session.voice_references[advisor.id] = {
+            'ref_audio': audio_path,
+            'ref_text': (reference_text or '').strip(),
+        }
+
     def choose_turn_profile(self, session, advisor, round_index, message_events):
         closing_turn = bool(session.stop_requested)
         others_spoke = any(evt.advisor_id != advisor.id for evt in message_events)
@@ -375,17 +409,20 @@ Rules:
         advisor = self.advisors[event.advisor_id]
         try:
             tts_text = await self.annotate_tts_text(event.content or '', language_context)
+            reference_text = (event.content or '').strip() or tts_text.strip()
+            voice_profile = self.resolve_tts_voice_profile(session, advisor, reference_text)
             audio_path = await self.tts.synthesize(
                 text=tts_text,
-                voice_mode=advisor.voice_mode,
-                voice_instruct=advisor.voice_instruct,
-                ref_audio=advisor.ref_audio,
-                ref_text=advisor.ref_text,
+                voice_mode=voice_profile['voice_mode'],
+                voice_instruct=voice_profile['voice_instruct'],
+                ref_audio=voice_profile['ref_audio'],
+                ref_text=voice_profile['ref_text'],
                 prefix=f"{session.id}-{advisor.id}",
                 language=language_context['tts_code'],
                 num_step=advisor.voice_num_step,
             )
             if audio_path:
+                self.remember_generated_voice_reference(session, advisor, audio_path, reference_text)
                 rel = Path(audio_path).resolve().relative_to(Path(__file__).resolve().parent.parent)
                 return await self.emit(session, 'audio_ready', advisor=advisor, meta={'event_id': event.id}, audio_url='/' + str(rel).replace('\\', '/'))
         except Exception as exc:

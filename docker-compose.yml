@@ -5,7 +5,8 @@ services:
       dockerfile: docker/omnivoice/Dockerfile
       args:
         TORCH_INSTALL_COMMAND: ${OMNIVOICE_TORCH_INSTALL_COMMAND:-pip install --index-url https://download.pytorch.org/whl/cu128 torch==2.8.0+cu128 torchaudio==2.8.0+cu128}
-        OMNIVOICE_INSTALL_SOURCE: ${OMNIVOICE_INSTALL_SOURCE:-git+https://github.com/groxaxo/OmniVoice-Streaming.git@6985abd54114c7b9df3f0a80d87daa3ada77b8e9}
+        OMNIVOICE_GIT_REPO: ${OMNIVOICE_GIT_REPO:-https://github.com/k2-fsa/OmniVoice.git}
+        OMNIVOICE_GIT_REF: ${OMNIVOICE_GIT_REF:-refs/pull/71/head}
     ports:
       - '8010:8010'
     gpus: all

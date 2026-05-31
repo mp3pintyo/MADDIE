@@ -55,6 +55,14 @@ class DebateEngine:
             return fallback
         return "\n".join([f"- {evt.advisor_name}: {evt.content}" for evt in events])
 
+    def conversation_timeline_text(self, session):
+        timeline = []
+        for evt in self.message_events(session):
+            round_index = evt.meta.get('round') if isinstance(evt.meta, dict) else None
+            round_prefix = f"[{round_index}. kör] " if round_index else ''
+            timeline.append(f"{round_prefix}{evt.advisor_name}: {evt.content}")
+        return "\n".join(timeline) if timeline else 'No previous messages yet.'
+
     def resolve_tts_voice_profile(self, session, advisor, reference_text: str):
         if advisor.voice_mode != 'instruct':
             return {
@@ -294,6 +302,82 @@ class DebateEngine:
 
         return random.choices(acts, weights=weights, k=1)[0]
 
+    def immediate_previous_turn(self, advisor, message_events):
+        for evt in reversed(message_events):
+            if evt.advisor_id == advisor.id:
+                continue
+            content = re.sub(r'\s+', ' ', (evt.content or '').strip())
+            return {
+                'advisor_name': evt.advisor_name or 'Another advisor',
+                'content': content,
+                'asked_question': bool(re.search(r'[?？]', content)),
+            }
+        return None
+
+    def choose_turn_reply_mode(self, previous_turn):
+        if not previous_turn:
+            return {
+                'label': 'opening move',
+                'instruction': 'You are opening the discussion. Frame one sharp angle and invite a response.',
+                'temperature_delta': 0.05,
+            }
+
+        if previous_turn['asked_question']:
+            modes = [
+                {
+                    'label': 'direct answer',
+                    'instruction': 'Answer the previous advisor\'s actual question first. Do not dodge it.',
+                    'temperature_delta': 0.05,
+                },
+                {
+                    'label': 'answer then challenge',
+                    'instruction': 'Give a direct answer first, then briefly challenge the assumption behind the question.',
+                    'temperature_delta': 0.08,
+                },
+                {
+                    'label': 'answer then follow-up question',
+                    'instruction': 'Answer briefly, then ask one sharper follow-up question that moves the debate forward.',
+                    'temperature_delta': 0.1,
+                },
+                {
+                    'label': 'partial answer with consequence',
+                    'instruction': 'Answer the question, then state the most important consequence or trade-off.',
+                    'temperature_delta': 0.06,
+                },
+            ]
+            weights = [40, 20, 25, 15]
+        else:
+            modes = [
+                {
+                    'label': 'direct reply to the last claim',
+                    'instruction': 'Respond to the previous advisor\'s actual claim, not just to the general topic.',
+                    'temperature_delta': 0.05,
+                },
+                {
+                    'label': 'agreement or disagreement with reason',
+                    'instruction': 'State clearly whether you agree or disagree with the previous turn, then give the reason.',
+                    'temperature_delta': 0.06,
+                },
+                {
+                    'label': 'build on one concrete point',
+                    'instruction': 'Pick one concrete point from the previous turn and extend it forward.',
+                    'temperature_delta': 0.05,
+                },
+                {
+                    'label': 'correction or rebuttal',
+                    'instruction': 'Correct or rebut one specific part of the previous turn. Do not restart the topic from zero.',
+                    'temperature_delta': 0.08,
+                },
+                {
+                    'label': 'acknowledge then redirect',
+                    'instruction': 'You may redirect, but only after explicitly acknowledging what the previous speaker just said.',
+                    'temperature_delta': 0.07,
+                },
+            ]
+            weights = [34, 24, 18, 16, 8]
+
+        return random.choices(modes, weights=weights, k=1)[0]
+
     def finalize_turn_text(self, text: str) -> str:
         cleaned = re.sub(r'\s+', ' ', (text or '').strip())
         cleaned = re.sub(r'^[-*•]+\s*', '', cleaned)
@@ -376,16 +460,18 @@ class DebateEngine:
             stderr_line = stderr_text.splitlines()[-1] if stderr_text else f'ffmpeg exit code {proc.returncode}'
             raise RuntimeError(stderr_line)
 
-    async def generate_turn(self, session, advisor, round_index, round_label, transcript_excerpt, language_context):
+    async def generate_turn(self, session, advisor, round_index, round_label, conversation_history, language_context):
         selected = [self.advisors[x] for x in session.advisor_ids]
         message_events = self.message_events(session)
-        own_history = self.format_message_list([evt for evt in message_events if evt.advisor_id == advisor.id][-2:], 'You have not spoken yet.')
-        others_history = self.format_message_list([evt for evt in message_events if evt.advisor_id != advisor.id][-6:], 'No one else has spoken yet.')
+        own_history = self.format_message_list([evt for evt in message_events if evt.advisor_id == advisor.id], 'You have not spoken yet.')
+        others_history = self.format_message_list([evt for evt in message_events if evt.advisor_id != advisor.id], 'No one else has spoken yet.')
+        previous_turn = self.immediate_previous_turn(advisor, message_events)
         turn_profile = self.choose_turn_profile(session, advisor, round_index, message_events)
         turn_speech_act = self.choose_turn_speech_act(session, advisor, round_index, message_events)
-        turn_temperature = min(1.1, max(0.35, self.settings.temperature + turn_profile['temperature_delta'] + turn_speech_act['temperature_delta']))
+        turn_reply_mode = self.choose_turn_reply_mode(previous_turn)
+        turn_temperature = min(1.1, max(0.35, self.settings.temperature + turn_profile['temperature_delta'] + turn_speech_act['temperature_delta'] + turn_reply_mode['temperature_delta']))
         turn_max_tokens = min(self.settings.max_tokens_per_turn, turn_profile['max_tokens'])
-        system = advisor.llm_prompt.strip() + f"\n\nYou are participating in a live, interruptible advisory debate. Stay in character. The meeting language is {language_context['prompt_name']}. Speak to the other advisors, not into the void. Maintain memory of what you already said and what the others already said. Sound like a real person in a fast back-and-forth conversation, not a polished panelist. It is normal to answer with one word, a fragment, a short question, a short command, or one sharp sentence when that is enough. Do not default to polished declarative statements. Questions, imperatives, objections, fragments, and quick follow-ups should be common across the debate."
+        system = advisor.llm_prompt.strip() + f"\n\nYou are participating in a live, interruptible advisory debate. Stay in character. The meeting language is {language_context['prompt_name']}. Speak to the other advisors, not into the void. Maintain memory of what you already said and what the others already said. Use the full conversation record below to remember who said what across the entire debate, not just the last exchange. Sound like a real person in a fast back-and-forth conversation, not a polished panelist. It is normal to answer with one word, a fragment, a short question, a short command, or one sharp sentence when that is enough. Do not default to polished declarative statements. Questions, imperatives, objections, fragments, and quick follow-ups should be common across the debate. When another advisor has just spoken, treat your turn as a reply to that exact line, not as a separate mini-monologue."
         user = f'''Meeting topic:
 {session.topic}
 
@@ -404,18 +490,28 @@ Your earlier statements:
 Other advisors already said:
 {others_history}
 
-Recent transcript:
-{transcript_excerpt or 'No previous messages yet.'}
+Immediate turn you are replying to:
+{f"{previous_turn['advisor_name']}: {previous_turn['content']}" if previous_turn else 'You are opening the conversation, so there is no previous turn yet.'}
+
+Full conversation so far (entire discussion, oldest to newest):
+{conversation_history or 'No previous messages yet.'}
 
 Your task:
 - Respond like natural spoken conversation, not a mini-essay.
+- Start from the immediate previous turn above whenever one exists.
+- If the previous speaker asked a question, answer that question before anything else.
+- Explicitly react to one concrete claim, question, risk, metric, or assumption from the immediate previous turn.
+- Also stay consistent with the full conversation so far: remember who said what, what you already argued, and what has already been answered.
+- Do not branch into a parallel monologue or restart from the topic statement.
 - Make one natural conversational move: agree, disagree, refine, challenge, ask, warn, conclude, redirect, or push for action.
 - Usually cover only one idea and stop.
-- If another advisor is worth answering, you may mention them by name, but do not force a name-drop every turn.
+- Direct address is good when natural: yes, no, wait, exactly, then answer them.
 - Stay consistent with your earlier stance unless you briefly explain a change.
 - If this is a closing turn, focus on your clearest final takeaway instead of reopening the whole debate.
 - Plain declarative statements should be the exception, not the default.
 - Prefer sentence moods that feel alive in conversation: question, imperative, interruption, correction, or challenge.
+- Reply mode for this reply: {turn_reply_mode['label']}.
+- {turn_reply_mode['instruction']}
 - Turn shape for this reply: {turn_profile['label']}.
 - {turn_profile['instruction']}
 - Primary speech act for this reply: {turn_speech_act['label']}.
@@ -657,8 +753,8 @@ Requirements:
                         if session.stop_budget_remaining <= 0:
                             stop_now = True
                             break
-                    transcript_excerpt = self.transcript_text(session).split("\n\n")[-8:]
-                    turn = await self.generate_turn(session, advisor, round_index, 'zárókör' if session.stop_requested else f"{round_index}. kör", "\n\n".join(transcript_excerpt), language_context)
+                    conversation_history = self.conversation_timeline_text(session)
+                    turn = await self.generate_turn(session, advisor, round_index, 'zárókör' if session.stop_requested else f"{round_index}. kör", conversation_history, language_context)
                     event = await self.emit(session, 'message', content=turn, advisor=advisor, meta={'round': round_index, 'closing': bool(session.stop_requested)})
                     audio_event = await self.synthesize_message_audio(session, event, language_context)
                     if audio_event:

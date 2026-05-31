@@ -1,6 +1,12 @@
 .venv/
 __pycache__/
 *.pyc
+00_prompt/
+01_context/
+02_sources/
+03_activity/
+04_artifacts/
+06_verification/
 app/generated/audio/
 app/generated/debates/
 logs/

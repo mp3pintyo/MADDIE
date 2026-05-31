@@ -119,6 +119,11 @@ OmniVoice szolgáltatás Dockerből:
 docker compose up --build omnivoice
 ```
 
+OmniVoice futás ellenőrzése
+
+```powershell
+curl http://127.0.0.1:8010/health
+
 App:
 - alapértelmezésben `http://127.0.0.1:8000`
 - Windows alatt, portütközés esetén a `run.ps1` a következő szabad portot választja

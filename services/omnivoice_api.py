@@ -8,21 +8,40 @@ from fastapi.responses import JSONResponse, Response
 from omnivoice import OmniVoice
 
 
+def _resolve_device(device_name: str | None) -> str:
+    name = (device_name or '').strip().lower()
+    if not name or name == 'auto':
+        if torch.cuda.is_available():
+            return 'cuda'
+        if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+            return 'mps'
+        return 'cpu'
+    return device_name or 'cpu'
+
+
 def _resolve_dtype(device_name: str, dtype_name: str | None):
     name = (dtype_name or '').strip().lower()
+    if not name or name == 'auto':
+        return None
     if name == 'float32':
         return torch.float32
     if name == 'bfloat16':
         return torch.bfloat16
-    if device_name.startswith('cpu'):
+    if name == 'float16':
+        return torch.float16
+    if name == 'fp32':
         return torch.float32
-    return torch.float16
+    if name == 'fp16':
+        return torch.float16
+    if name == 'bf16':
+        return torch.bfloat16
+    raise ValueError(f'Nem támogatott OmniVoice dtype: {dtype_name}')
 
 
 class OmniVoiceService:
     def __init__(self):
         self.model_name = os.getenv('OMNIVOICE_MODEL', 'k2-fsa/OmniVoice')
-        self.device = os.getenv('OMNIVOICE_DEVICE', 'cpu')
+        self.device = _resolve_device(os.getenv('OMNIVOICE_DEVICE', 'auto'))
         self.dtype_name = os.getenv('OMNIVOICE_DTYPE', '')
         self.model = None
 
@@ -30,7 +49,13 @@ class OmniVoiceService:
         if self.model is not None:
             return self.model
         dtype = _resolve_dtype(self.device, self.dtype_name)
-        self.model = OmniVoice.from_pretrained(self.model_name, device_map=self.device, dtype=dtype)
+        load_kwargs = {
+            'device_map': self.device,
+        }
+        if dtype is not None:
+            load_kwargs['dtype'] = dtype
+        self.model = OmniVoice.from_pretrained(self.model_name, **load_kwargs)
+        self.device = str(getattr(self.model, 'device', self.device))
         return self.model
 
 
@@ -46,11 +71,16 @@ async def startup_event():
 @app.get('/health')
 async def health():
     service.load()
+    resolved_dtype = getattr(service.model, 'dtype', None)
     return JSONResponse({
         'ok': True,
         'model': service.model_name,
         'device': service.device,
-        'dtype': str(_resolve_dtype(service.device, service.dtype_name)).replace('torch.', ''),
+        'dtype': (
+            str(resolved_dtype).replace('torch.', '')
+            if resolved_dtype is not None
+            else 'auto'
+        ),
     })
 
 

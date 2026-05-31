@@ -7,11 +7,12 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg git libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
 
-ARG TORCH_INSTALL_COMMAND="pip install torch==2.8.0 torchaudio==2.8.0"
+ARG TORCH_INSTALL_COMMAND="pip install --index-url https://download.pytorch.org/whl/cu128 torch==2.8.0+cu128 torchaudio==2.8.0+cu128"
+ARG OMNIVOICE_INSTALL_SOURCE="git+https://github.com/groxaxo/OmniVoice-Streaming.git@6985abd54114c7b9df3f0a80d87daa3ada77b8e9"
 
 RUN python -m pip install --upgrade pip setuptools wheel \
     && sh -lc "$TORCH_INSTALL_COMMAND" \
-    && pip install fastapi==0.136.3 uvicorn==0.48.0 python-multipart==0.0.29 soundfile omnivoice
+    && pip install fastapi==0.136.3 uvicorn==0.48.0 python-multipart==0.0.29 soundfile "$OMNIVOICE_INSTALL_SOURCE"
 
 WORKDIR /workspace
 

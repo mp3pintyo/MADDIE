@@ -4,15 +4,19 @@ services:
       context: .
       dockerfile: docker/omnivoice/Dockerfile
       args:
-        TORCH_INSTALL_COMMAND: ${OMNIVOICE_TORCH_INSTALL_COMMAND:-pip install torch==2.8.0 torchaudio==2.8.0}
+        TORCH_INSTALL_COMMAND: ${OMNIVOICE_TORCH_INSTALL_COMMAND:-pip install --index-url https://download.pytorch.org/whl/cu128 torch==2.8.0+cu128 torchaudio==2.8.0+cu128}
+        OMNIVOICE_INSTALL_SOURCE: ${OMNIVOICE_INSTALL_SOURCE:-git+https://github.com/groxaxo/OmniVoice-Streaming.git@6985abd54114c7b9df3f0a80d87daa3ada77b8e9}
     ports:
       - '8010:8010'
+    gpus: all
     environment:
       OMNIVOICE_MODEL: ${OMNIVOICE_MODEL:-k2-fsa/OmniVoice}
-      OMNIVOICE_DEVICE: ${OMNIVOICE_DEVICE:-cpu}
-      OMNIVOICE_DTYPE: ${OMNIVOICE_DTYPE:-float32}
+      OMNIVOICE_DEVICE: ${OMNIVOICE_DEVICE:-auto}
+      OMNIVOICE_DTYPE: ${OMNIVOICE_DTYPE:-auto}
       HF_HOME: /models/huggingface
       TRANSFORMERS_CACHE: /models/huggingface
+      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-all}
+      NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}
     volumes:
       - omnivoice-hf-cache:/models/huggingface
     restart: unless-stopped

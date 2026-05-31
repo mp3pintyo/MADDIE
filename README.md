@@ -149,7 +149,21 @@ Fontos mezők:
 3. Futtasd az alkalmazást PowerShellből: `.\run.ps1`.
 4. Nyisd meg a PowerShellben kiírt helyi URL-t. Ha nincs portütközés, ez `http://127.0.0.1:8000` lesz.
 
-CPU-s Docker azonnal működik. NVIDIA GPU-hoz a compose build argot és az `OMNIVOICE_DEVICE` változót kell felülírni.
+Az OmniVoice konténer most alapból CUDA-s PyTorch builddel készül, `gpus: all`-lal indul, és `OMNIVOICE_DEVICE=auto` módban megpróbál GPU-ra állni. RTX 30-as kártyáknál a Docker image a PR 71-es OmniVoice ágat telepíti, így az Ampere-optimalizált BF16/TF32/flex-attention inferenciaút elérhető.
+
+Ha a Docker Desktop nem lát NVIDIA GPU-t, a szolgáltatás CPU-ra esik vissza. Ezt a `/health` végponton tudod ellenőrizni: `http://127.0.0.1:8010/health`.
+
+Kézi felülírás példák PowerShellben:
+
+```powershell
+$env:OMNIVOICE_DEVICE = 'cuda'
+docker compose up --build omnivoice
+```
+
+```powershell
+$env:OMNIVOICE_DEVICE = 'cpu'
+docker compose up --build omnivoice
+```
 
 ## Hangklónozás
 

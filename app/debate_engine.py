@@ -186,6 +186,114 @@ class DebateEngine:
 
         return random.choices(profiles, weights=weights, k=1)[0]
 
+    def choose_turn_speech_act(self, session, advisor, round_index, message_events):
+        closing_turn = bool(session.stop_requested)
+        others_spoke = any(evt.advisor_id != advisor.id for evt in message_events)
+
+        if closing_turn:
+            acts = [
+                {
+                    'label': 'decisive imperative takeaway',
+                    'instruction': 'Give a brief recommendation, warning, or decision in imperative form.',
+                    'temperature_delta': 0.05,
+                },
+                {
+                    'label': 'brief reaction then directive',
+                    'instruction': 'React briefly to the debate, then tell the group what to do, test, compare, or stop doing.',
+                    'temperature_delta': 0.05,
+                },
+                {
+                    'label': 'closing challenge question',
+                    'instruction': 'Leave one sharp unresolved question on the table. End with a question mark.',
+                    'temperature_delta': 0.1,
+                },
+                {
+                    'label': 'plain decisive closing line',
+                    'instruction': 'State one final line cleanly and stop. Do not turn it into a recap paragraph.',
+                    'temperature_delta': 0.0,
+                },
+            ]
+            weights = [35, 25, 15, 25]
+        elif round_index == 1 and not others_spoke:
+            acts = [
+                {
+                    'label': 'provocative opening question',
+                    'instruction': 'Open by challenging the room with a direct question. End with a question mark.',
+                    'temperature_delta': 0.1,
+                },
+                {
+                    'label': 'agenda-setting imperative',
+                    'instruction': 'Open by telling the room what to examine, compare, or avoid. Use imperative wording.',
+                    'temperature_delta': 0.1,
+                },
+                {
+                    'label': 'sharp opening claim',
+                    'instruction': 'Open with one sharp claim, objection, or framing move.',
+                    'temperature_delta': 0.05,
+                },
+                {
+                    'label': 'skeptical challenge',
+                    'instruction': 'Open with a short skeptical pushback or challenge, not a polished explanation.',
+                    'temperature_delta': 0.1,
+                },
+            ]
+            weights = [28, 24, 28, 20]
+        elif others_spoke:
+            acts = [
+                {
+                    'label': 'direct question to another advisor',
+                    'instruction': 'Ask one advisor a short direct question, request for evidence, or challenge. End with a question mark.',
+                    'temperature_delta': 0.12,
+                },
+                {
+                    'label': 'brief reaction then question',
+                    'instruction': 'Start with a quick reaction, then ask a follow-up question.',
+                    'temperature_delta': 0.1,
+                },
+                {
+                    'label': 'imperative push',
+                    'instruction': 'Use a short imperative or suggestion to push the discussion somewhere: test, compare, drop, verify, or decide something.',
+                    'temperature_delta': 0.08,
+                },
+                {
+                    'label': 'brief reaction then directive',
+                    'instruction': 'Start with a quick reaction, then tell the group or one advisor what to test, compare, or decide next.',
+                    'temperature_delta': 0.08,
+                },
+                {
+                    'label': 'interrupting correction or objection',
+                    'instruction': 'Use a short correction, objection, or skeptical fragment. Do not over-explain.',
+                    'temperature_delta': 0.08,
+                },
+                {
+                    'label': 'concise plain statement',
+                    'instruction': 'A plain statement is allowed, but keep it spoken, interruptible, and clearly in response to the room.',
+                    'temperature_delta': 0.0,
+                },
+            ]
+            weights = [24, 20, 20, 16, 12, 8]
+        else:
+            acts = [
+                {
+                    'label': 'sharp claim',
+                    'instruction': 'Make one strong spoken point and stop.',
+                    'temperature_delta': 0.05,
+                },
+                {
+                    'label': 'provocative question',
+                    'instruction': 'Frame your point as a direct question to the room. End with a question mark.',
+                    'temperature_delta': 0.1,
+                },
+                {
+                    'label': 'imperative suggestion',
+                    'instruction': 'Push one concrete move in imperative form.',
+                    'temperature_delta': 0.08,
+                },
+            ]
+            weights = [40, 35, 25]
+
+        return random.choices(acts, weights=weights, k=1)[0]
+
     def finalize_turn_text(self, text: str) -> str:
         cleaned = re.sub(r'\s+', ' ', (text or '').strip())
         cleaned = re.sub(r'^[-*•]+\s*', '', cleaned)
@@ -274,9 +382,10 @@ class DebateEngine:
         own_history = self.format_message_list([evt for evt in message_events if evt.advisor_id == advisor.id][-2:], 'You have not spoken yet.')
         others_history = self.format_message_list([evt for evt in message_events if evt.advisor_id != advisor.id][-6:], 'No one else has spoken yet.')
         turn_profile = self.choose_turn_profile(session, advisor, round_index, message_events)
-        turn_temperature = min(1.05, max(0.35, self.settings.temperature + turn_profile['temperature_delta']))
+        turn_speech_act = self.choose_turn_speech_act(session, advisor, round_index, message_events)
+        turn_temperature = min(1.1, max(0.35, self.settings.temperature + turn_profile['temperature_delta'] + turn_speech_act['temperature_delta']))
         turn_max_tokens = min(self.settings.max_tokens_per_turn, turn_profile['max_tokens'])
-        system = advisor.llm_prompt.strip() + f"\n\nYou are participating in a live, interruptible advisory debate. Stay in character. The meeting language is {language_context['prompt_name']}. Speak to the other advisors, not into the void. Maintain memory of what you already said and what the others already said. Sound like a real person in a fast back-and-forth conversation, not a polished panelist. It is normal to answer with one word, a fragment, a short question, or one sharp sentence when that is enough."
+        system = advisor.llm_prompt.strip() + f"\n\nYou are participating in a live, interruptible advisory debate. Stay in character. The meeting language is {language_context['prompt_name']}. Speak to the other advisors, not into the void. Maintain memory of what you already said and what the others already said. Sound like a real person in a fast back-and-forth conversation, not a polished panelist. It is normal to answer with one word, a fragment, a short question, a short command, or one sharp sentence when that is enough. Do not default to polished declarative statements. Questions, imperatives, objections, fragments, and quick follow-ups should be common across the debate."
         user = f'''Meeting topic:
 {session.topic}
 
@@ -300,13 +409,17 @@ Recent transcript:
 
 Your task:
 - Respond like natural spoken conversation, not a mini-essay.
-- Make one natural conversational move: agree, disagree, refine, challenge, ask, warn, conclude, or redirect.
+- Make one natural conversational move: agree, disagree, refine, challenge, ask, warn, conclude, redirect, or push for action.
 - Usually cover only one idea and stop.
 - If another advisor is worth answering, you may mention them by name, but do not force a name-drop every turn.
 - Stay consistent with your earlier stance unless you briefly explain a change.
 - If this is a closing turn, focus on your clearest final takeaway instead of reopening the whole debate.
+- Plain declarative statements should be the exception, not the default.
+- Prefer sentence moods that feel alive in conversation: question, imperative, interruption, correction, or challenge.
 - Turn shape for this reply: {turn_profile['label']}.
 - {turn_profile['instruction']}
+- Primary speech act for this reply: {turn_speech_act['label']}.
+- {turn_speech_act['instruction']}
 - One-word answers are valid when enough.
 - Hard cap: 4 sentences.
 - No bullet list, no markdown, no stage directions.

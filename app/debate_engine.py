@@ -1,5 +1,6 @@
 import asyncio
 import json
+import random
 import re
 import shutil
 import subprocess
@@ -53,6 +54,122 @@ class DebateEngine:
         if not events:
             return fallback
         return "\n".join([f"- {evt.advisor_name}: {evt.content}" for evt in events])
+
+    def choose_turn_profile(self, session, advisor, round_index, message_events):
+        closing_turn = bool(session.stop_requested)
+        others_spoke = any(evt.advisor_id != advisor.id for evt in message_events)
+
+        if closing_turn:
+            profiles = [
+                {
+                    'label': '1 short closing sentence',
+                    'instruction': 'End with one decisive line if that is enough.',
+                    'max_tokens': 48,
+                    'temperature_delta': 0.05,
+                },
+                {
+                    'label': '2 short closing sentences',
+                    'instruction': 'Keep the close brief and pointed.',
+                    'max_tokens': 72,
+                    'temperature_delta': 0.05,
+                },
+                {
+                    'label': '3 short closing sentences',
+                    'instruction': 'Only add a second or third sentence if it genuinely adds something new.',
+                    'max_tokens': 110,
+                    'temperature_delta': 0.0,
+                },
+                {
+                    'label': 'up to 4 short closing sentences',
+                    'instruction': 'Use four sentences only if a compressed conclusion truly needs it.',
+                    'max_tokens': 150,
+                    'temperature_delta': -0.05,
+                },
+            ]
+            weights = [30, 40, 20, 10]
+        elif round_index == 1 and not others_spoke:
+            profiles = [
+                {
+                    'label': '1 sharp opening sentence',
+                    'instruction': 'Open with a single sharp angle if that is enough.',
+                    'max_tokens': 48,
+                    'temperature_delta': 0.1,
+                },
+                {
+                    'label': '2 short opening sentences',
+                    'instruction': 'State one core point and stop. Do not pre-explain everything.',
+                    'max_tokens': 72,
+                    'temperature_delta': 0.1,
+                },
+                {
+                    'label': '3 short opening sentences',
+                    'instruction': 'Use a third sentence only if you need one concrete implication.',
+                    'max_tokens': 110,
+                    'temperature_delta': 0.0,
+                },
+                {
+                    'label': 'up to 4 short opening sentences',
+                    'instruction': 'Only use four sentences if the topic truly needs a slightly fuller opening.',
+                    'max_tokens': 150,
+                    'temperature_delta': -0.05,
+                },
+            ]
+            weights = [20, 45, 25, 10]
+        else:
+            profiles = [
+                {
+                    'label': '1 to 4 words or 1 short sentence',
+                    'instruction': 'Treat this like live back-and-forth. A quick agreement, objection, question, or correction is ideal.',
+                    'max_tokens': 48,
+                    'temperature_delta': 0.2,
+                },
+                {
+                    'label': '1 short sentence',
+                    'instruction': 'Make one point cleanly and stop.',
+                    'max_tokens': 60,
+                    'temperature_delta': 0.15,
+                },
+                {
+                    'label': '2 short sentences',
+                    'instruction': 'Add a second sentence only if it sharpens or challenges the first.',
+                    'max_tokens': 80,
+                    'temperature_delta': 0.1,
+                },
+                {
+                    'label': '3 short sentences',
+                    'instruction': 'Keep it compact and spoken, never essay-like.',
+                    'max_tokens': 110,
+                    'temperature_delta': 0.05,
+                },
+                {
+                    'label': 'up to 4 short sentences',
+                    'instruction': 'Use four sentences only when the exchange would otherwise become unclear.',
+                    'max_tokens': 150,
+                    'temperature_delta': 0.0,
+                },
+            ]
+            weights = [20, 35, 25, 15, 5]
+
+        return random.choices(profiles, weights=weights, k=1)[0]
+
+    def finalize_turn_text(self, text: str) -> str:
+        cleaned = re.sub(r'\s+', ' ', (text or '').strip())
+        cleaned = re.sub(r'^[-*•]+\s*', '', cleaned)
+        if not cleaned:
+            return ''
+
+        trimmed_sentences = []
+        for sentence, separator in split_tts_sentences(cleaned):
+            chunk = re.sub(r'^[-*•]+\s*', '', f'{sentence}{separator}'.strip())
+            if not chunk:
+                continue
+            trimmed_sentences.append(chunk)
+            if len(trimmed_sentences) >= 4:
+                break
+
+        if trimmed_sentences:
+            return ' '.join(trimmed_sentences).strip()
+        return cleaned
 
     def detect_topic_language(self, text: str):
         if re.search(r'[\u4e00-\u9fff]', text):
@@ -122,7 +239,10 @@ class DebateEngine:
         message_events = self.message_events(session)
         own_history = self.format_message_list([evt for evt in message_events if evt.advisor_id == advisor.id][-2:], 'You have not spoken yet.')
         others_history = self.format_message_list([evt for evt in message_events if evt.advisor_id != advisor.id][-6:], 'No one else has spoken yet.')
-        system = advisor.llm_prompt.strip() + f"\n\nYou are participating in a live, high-signal advisory roundtable. Stay in character. The meeting language is {language_context['prompt_name']}. Speak to the other advisors, not into the void. Maintain memory of what you already said and what the others already said. Be concise, direct, and conversational."
+        turn_profile = self.choose_turn_profile(session, advisor, round_index, message_events)
+        turn_temperature = min(1.05, max(0.35, self.settings.temperature + turn_profile['temperature_delta']))
+        turn_max_tokens = min(self.settings.max_tokens_per_turn, turn_profile['max_tokens'])
+        system = advisor.llm_prompt.strip() + f"\n\nYou are participating in a live, interruptible advisory debate. Stay in character. The meeting language is {language_context['prompt_name']}. Speak to the other advisors, not into the void. Maintain memory of what you already said and what the others already said. Sound like a real person in a fast back-and-forth conversation, not a polished panelist. It is normal to answer with one word, a fragment, a short question, or one sharp sentence when that is enough."
         user = f'''Meeting topic:
 {session.topic}
 
@@ -145,13 +265,16 @@ Recent transcript:
 {transcript_excerpt or 'No previous messages yet.'}
 
 Your task:
-- Give your perspective from your persona.
-- If others have already spoken, explicitly react to at least one named advisor and say whether you agree, disagree, refine, or question their point.
-- Remember your own earlier position and stay consistent unless you explain why you changed your mind.
-- Add one practical implication, risk, opportunity, or recommendation.
-- If this is a closing turn, end with your most important takeaway.
-- Use 1 to 4 sentences total. One-word answers are allowed if they are genuinely enough.
-- Do not exceed 4 sentences.
+- Respond like natural spoken conversation, not a mini-essay.
+- Make one natural conversational move: agree, disagree, refine, challenge, ask, warn, conclude, or redirect.
+- Usually cover only one idea and stop.
+- If another advisor is worth answering, you may mention them by name, but do not force a name-drop every turn.
+- Stay consistent with your earlier stance unless you briefly explain a change.
+- If this is a closing turn, focus on your clearest final takeaway instead of reopening the whole debate.
+- Turn shape for this reply: {turn_profile['label']}.
+- {turn_profile['instruction']}
+- One-word answers are valid when enough.
+- Hard cap: 4 sentences.
 - No bullet list, no markdown, no stage directions.
 
 Return only your spoken contribution.'''
@@ -160,17 +283,19 @@ Return only your spoken contribution.'''
             {'role': 'user', 'content': user},
         ]
         try:
-            return await self.llm.chat(
+            response = await self.llm.chat(
                 messages=messages,
-                temperature=self.settings.temperature,
-                max_tokens=self.settings.max_tokens_per_turn,
+                temperature=turn_temperature,
+                max_tokens=turn_max_tokens,
             )
+            return self.finalize_turn_text(response)
         except Exception:
-            return await self.llm.chat(
+            response = await self.llm.chat(
                 messages=messages,
-                temperature=min(self.settings.temperature, 0.6),
-                max_tokens=max(120, int(self.settings.max_tokens_per_turn * 0.65)),
+                temperature=min(turn_temperature, 0.65),
+                max_tokens=max(48, int(turn_max_tokens * 0.85)),
             )
+            return self.finalize_turn_text(response)
 
     def should_annotate_tts_text(self, language_context) -> bool:
         if not self.tts or not self.settings.omnivoice_llm_annotation_enabled:

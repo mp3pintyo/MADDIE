@@ -381,6 +381,11 @@ class DebateEngine:
     def finalize_turn_text(self, text: str) -> str:
         cleaned = re.sub(r'\s+', ' ', (text or '').strip())
         cleaned = re.sub(r'^[-*•]+\s*', '', cleaned)
+        if re.match(r'^(wait|ok|okay|actually|let\'s|lets|here\'s|heres|i\'d|id|try this|better|more)\b', cleaned, re.IGNORECASE):
+            quoted_candidates = [candidate.strip() for candidate in re.findall(r'["“](.+?)["”]', cleaned) if candidate.strip()]
+            if quoted_candidates:
+                cleaned = max(quoted_candidates, key=len)
+        cleaned = cleaned.strip('"“”\' ')
         if not cleaned:
             return ''
 
@@ -471,7 +476,7 @@ class DebateEngine:
         turn_reply_mode = self.choose_turn_reply_mode(previous_turn)
         turn_temperature = min(1.1, max(0.35, self.settings.temperature + turn_profile['temperature_delta'] + turn_speech_act['temperature_delta'] + turn_reply_mode['temperature_delta']))
         turn_max_tokens = min(self.settings.max_tokens_per_turn, turn_profile['max_tokens'])
-        system = advisor.llm_prompt.strip() + f"\n\nYou are participating in a live, interruptible advisory debate. Stay in character. The meeting language is {language_context['prompt_name']}. Speak to the other advisors, not into the void. Maintain memory of what you already said and what the others already said. Use the full conversation record below to remember who said what across the entire debate, not just the last exchange. Sound like a real person in a fast back-and-forth conversation, not a polished panelist. It is normal to answer with one word, a fragment, a short question, a short command, or one sharp sentence when that is enough. Do not default to polished declarative statements. Questions, imperatives, objections, fragments, and quick follow-ups should be common across the debate. When another advisor has just spoken, treat your turn as a reply to that exact line, not as a separate mini-monologue."
+        system = advisor.llm_prompt.strip() + f"\n\nYou are participating in a live, interruptible advisory debate. Stay in character. The meeting language is {language_context['prompt_name']}. Speak to the other advisors, not into the void. Your persona is a lens for analyzing the literal meeting topic, not a reason to replace the topic with your profession or favorite jargon. Stay grounded in the real-world situation named in the topic. Do not recast the discussion as a software product, AI model, startup, content strategy, artwork, UX problem, or abstract thought experiment unless the topic itself is actually about that. Never invent an imaginary 'our model', 'our product', 'our users', 'our roadmap', 'our audience', or similar workplace framing unless that framing is explicitly present in the topic or conversation. If you need technical or professional language, tie it to the real systems inside the scenario itself. Maintain memory of what you already said and what the others already said. Use the full conversation record below to remember who said what across the entire debate, not just the last exchange. Sound like a real person in a fast back-and-forth conversation, not a polished panelist. It is normal to answer with one word, a fragment, a short question, a short command, or one sharp sentence when that is enough. Do not default to polished declarative statements. Questions, imperatives, objections, fragments, and quick follow-ups should be common across the debate. When another advisor has just spoken, treat your turn as a reply to that exact line, not as a separate mini-monologue."
         user = f'''Meeting topic:
 {session.topic}
 
@@ -498,11 +503,19 @@ Full conversation so far (entire discussion, oldest to newest):
 
 Your task:
 - Respond like natural spoken conversation, not a mini-essay.
+- Stay inside the literal topic. Your role is only a perspective on the topic, not a new topic.
+- Keep the discussion about the actual people, place, institutions, material conditions, and consequences implied by the meeting topic.
+- In most turns, mention or clearly imply at least one concrete element of the scenario: affected people, water, food, disease, migration, conflict, infrastructure, government response, time pressure, or another real consequence relevant to this topic.
+- Avoid imaginary workplace framing. Do not talk about a fictional product, roadmap, feature scope, user segment, audience strategy, or model-training task unless the topic literally calls for it.
+- If you use a metric, threshold, system, or trade-off, make it a real one from the scenario itself.
 - Start from the immediate previous turn above whenever one exists.
 - If the previous speaker asked a question, answer that question before anything else.
 - Explicitly react to one concrete claim, question, risk, metric, or assumption from the immediate previous turn.
 - Also stay consistent with the full conversation so far: remember who said what, what you already argued, and what has already been answered.
+- If another advisor drifts into generic role jargon or an unrelated metaphor, pull the discussion back to the literal scenario.
+- Any metric, recommendation, philosophical point, or aesthetic point must still connect back to the real situation in the topic.
 - Do not branch into a parallel monologue or restart from the topic statement.
+- Never narrate your drafting process or style adjustment. Do not output lines like 'wait', 'let\'s make it more...', 'here\'s a version', or quotes around your answer.
 - Make one natural conversational move: agree, disagree, refine, challenge, ask, warn, conclude, redirect, or push for action.
 - Usually cover only one idea and stop.
 - Direct address is good when natural: yes, no, wait, exactly, then answer them.

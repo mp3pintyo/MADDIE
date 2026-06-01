@@ -1,6 +1,6 @@
 {
   "llama_base_url": "http://10.5.0.2:1234",
-  "llama_model": "carnice-qwen3.6-moe-35b-a3b-apex-mtp",
+  "llama_model": "qwen3.6-35b-a3b-uncensored-hauhaucs-aggressive",
   "request_timeout_seconds": 600,
   "temperature": 0.7,
   "summary_temperature": 0.4,

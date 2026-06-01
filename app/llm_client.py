@@ -7,6 +7,7 @@ import httpx
 
 THINKING_TAG_RE = re.compile(r'<think>.*?</think>', re.IGNORECASE | re.DOTALL)
 QUOTED_CANDIDATE_RE = re.compile(r'["“](.{20,}?)["”]', re.DOTALL)
+JSON_FENCE_RE = re.compile(r'```(?:json)?\s*(\{.*?\})\s*```', re.IGNORECASE | re.DOTALL)
 
 
 def _normalize_loopback_base_url(base_url: str) -> str:
@@ -39,6 +40,109 @@ def _extract_json_candidate(text: str) -> str:
     if start != -1 and end != -1 and end > start:
         return cleaned[start:end+1]
     return cleaned
+
+
+def _extract_valid_json_object(text: str) -> str:
+    candidate = _extract_json_candidate(text)
+    if candidate.startswith('{') and candidate.endswith('}'):
+        try:
+            json.loads(candidate)
+            return candidate
+        except json.JSONDecodeError:
+            pass
+
+    for start in range(len(text)):
+        if text[start] != '{':
+            continue
+        depth = 0
+        for end in range(start, len(text)):
+            char = text[end]
+            if char == '{':
+                depth += 1
+            elif char == '}':
+                depth -= 1
+                if depth == 0:
+                    candidate = text[start:end + 1].strip()
+                    try:
+                        json.loads(candidate)
+                        return candidate
+                    except json.JSONDecodeError:
+                        break
+    return ''
+
+
+def _repair_truncated_json(text: str) -> str:
+    candidate = _extract_json_candidate(text)
+    if not candidate:
+        return ''
+
+    working = candidate.rstrip()
+    if not working.startswith('{'):
+        return ''
+
+    if working.endswith(':'):
+        working += ' null'
+
+    if working.endswith(','):
+        working = working[:-1].rstrip()
+
+    closers = []
+    stack = []
+    in_string = False
+    escape = False
+
+    for char in working:
+        if escape:
+            escape = False
+            continue
+        if char == '\\' and in_string:
+            escape = True
+            continue
+        if char == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if char == '{':
+            stack.append('}')
+        elif char == '[':
+            stack.append(']')
+        elif char in '}]' and stack and stack[-1] == char:
+            stack.pop()
+
+    if in_string:
+        working += '"'
+
+    working = working.rstrip()
+    if working.endswith(':'):
+        working += ' null'
+    elif working.endswith(','):
+        working = working[:-1].rstrip()
+
+    while stack:
+        closer = stack.pop()
+        if working.endswith(':'):
+            working += ' null'
+        elif working.endswith(','):
+            working = working[:-1].rstrip()
+        working += closer
+
+    try:
+        json.loads(working)
+        return working
+    except json.JSONDecodeError:
+        return ''
+
+
+def _looks_like_json_fragment(text: str) -> bool:
+    stripped = (text or '').strip()
+    if not stripped:
+        return False
+    if not stripped.startswith('{'):
+        return False
+    if _extract_valid_json_object(stripped):
+        return False
+    return True
 
 
 def _flatten_message_field(value) -> str:
@@ -102,6 +206,16 @@ def _extract_answer_from_reasoning(reasoning: str) -> str:
     if not reasoning:
         return ''
 
+    json_candidate = _extract_valid_json_object(reasoning)
+    if json_candidate:
+        return json_candidate
+
+    json_blocks = JSON_FENCE_RE.findall(reasoning)
+    for block in reversed(json_blocks):
+        candidate = _extract_valid_json_object(block)
+        if candidate:
+            return candidate
+
     candidates = []
     for match in QUOTED_CANDIDATE_RE.findall(reasoning):
         candidate = _clean_reasoning_candidate(match)
@@ -164,6 +278,21 @@ def _extract_answer_from_reasoning(reasoning: str) -> str:
     return ''
 
 
+def _merge_continuation(prefix: str, suffix: str) -> str:
+    if not prefix:
+        return suffix
+    if not suffix:
+        return prefix
+    if suffix.startswith(prefix):
+        return suffix
+
+    overlap = min(len(prefix), len(suffix))
+    for size in range(overlap, 0, -1):
+        if prefix.endswith(suffix[:size]):
+            return prefix + suffix[size:]
+    return prefix + suffix
+
+
 class LlamaCppClient:
     def __init__(self, base_url: str, model: str, timeout_seconds: int = 600):
         self.base_url = _normalize_loopback_base_url(base_url)
@@ -208,6 +337,12 @@ class LlamaCppClient:
                 saw_reasoning_only = True
                 reasoning_candidates.append(reasoning_content)
 
+                extracted = _extract_answer_from_reasoning(reasoning_content)
+                if extracted and extracted.startswith('{') and extracted.endswith('}'):
+                    return extracted
+                if parts and extracted:
+                    return _merge_continuation(''.join(parts), extracted).strip()
+
             if choice.get('finish_reason') != 'length' and parts:
                 break
 
@@ -220,10 +355,15 @@ class LlamaCppClient:
                     continue
                 break
 
+            if parts and not visible_content:
+                break
+
             if choice.get('finish_reason') != 'length':
                 break
 
             partial = ''.join(parts)
+            if _looks_like_json_fragment(partial):
+                break
             current_messages = [
                 *messages,
                 {'role': 'assistant', 'content': partial},
@@ -234,6 +374,11 @@ class LlamaCppClient:
             ]
 
         if not parts and saw_reasoning_only:
+            for reasoning in reversed(reasoning_candidates):
+                extracted = _extract_answer_from_reasoning(reasoning)
+                if extracted:
+                    return extracted
+
             rescue_messages = [
                 *messages,
                 {
@@ -270,6 +415,10 @@ class LlamaCppClient:
         try:
             return json.loads(cleaned)
         except json.JSONDecodeError:
+            repaired_locally = _repair_truncated_json(cleaned)
+            if repaired_locally:
+                return json.loads(repaired_locally)
+
             repair_messages = [
                 {
                     'role': 'system',

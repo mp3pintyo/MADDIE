@@ -15,6 +15,17 @@ from .tts_manager import SUPPORTED_NON_VERBAL_TAGS, apply_omnivoice_annotation_p
 
 
 class DebateEngine:
+    META_PREFIX_PATTERNS = (
+        r'^review against constraints:\s*',
+        r'^check constraints:\s*',
+        r'^constraints met\.?\s*',
+        r'^all constraints met\.?\s*',
+        r'^final output(?: generation)?:\s*',
+        r'^draft(?: construction)?:\s*',
+        r"^here'?s a version:\s*",
+        r"^here'?s the version:\s*",
+    )
+
     def __init__(self, settings, advisors, llm: LlamaCppClient, tts):
         self.settings = settings
         self.advisors = {a.id: a for a in advisors}
@@ -385,6 +396,8 @@ class DebateEngine:
             quoted_candidates = [candidate.strip() for candidate in re.findall(r'["“](.+?)["”]', cleaned) if candidate.strip()]
             if quoted_candidates:
                 cleaned = max(quoted_candidates, key=len)
+
+        cleaned = self.strip_meta_prefixes(cleaned)
         cleaned = cleaned.strip('"“”\' ')
         if not cleaned:
             return ''
@@ -401,6 +414,101 @@ class DebateEngine:
         if trimmed_sentences:
             return ' '.join(trimmed_sentences).strip()
         return cleaned
+
+    def strip_meta_prefixes(self, text: str) -> str:
+        working = (text or '').strip()
+        if not working:
+            return ''
+
+        changed = True
+        while changed:
+            changed = False
+            for pattern in self.META_PREFIX_PATTERNS:
+                updated = re.sub(pattern, '', working, count=1, flags=re.IGNORECASE).strip()
+                if updated != working:
+                    working = updated
+                    changed = True
+
+            updated = re.sub(
+                r'^(?:review against constraints|check constraints|constraints met|all constraints met)[^.!?]*[.!?]\s*',
+                '',
+                working,
+                count=1,
+                flags=re.IGNORECASE,
+            ).strip()
+            if updated != working:
+                working = updated
+                changed = True
+
+        return working
+
+    def build_turn_messages(
+        self,
+        session,
+        advisor,
+        round_label,
+        conversation_history,
+        language_context,
+        own_history,
+        others_history,
+        previous_turn,
+        turn_profile,
+        turn_speech_act,
+        turn_reply_mode,
+    ):
+        system = advisor.llm_prompt.strip() + (
+            f"\n\nYou are participating in a live, interruptible advisory debate. "
+            f"Stay in character. The meeting language is {language_context['prompt_name']}. "
+            "The literal meeting topic comes first. "
+            "Your persona is a way of seeing the topic, not a reason to replace it with role-jargon, a fake workplace scenario, or an abstract thought experiment. "
+            "Speak to the other advisors like a real person in a live discussion. "
+            "Keep your wording characterful, but keep your reasoning anchored to the actual topic. "
+            "Do not invent an imaginary product, roadmap, audience, model, startup, or internal team unless the topic itself is about that. "
+            "Do not output internal review language, constraint checks, drafting notes, or chain-of-thought. "
+            "React to what was just said instead of launching a separate monologue."
+        )
+        user = f'''Meeting topic:
+{session.topic}
+
+Participants:
+{self.roster_text([self.advisors[x] for x in session.advisor_ids])}
+
+Current round:
+{round_label}
+
+Support scores so far:
+{json.dumps(session.scores, ensure_ascii=False)}
+
+Your earlier statements:
+{own_history}
+
+Other advisors already said:
+{others_history}
+
+Immediate turn you are replying to:
+{f"{previous_turn['advisor_name']}: {previous_turn['content']}" if previous_turn else 'You are opening the conversation, so there is no previous turn yet.'}
+
+Full conversation so far (entire discussion, oldest to newest):
+{conversation_history or 'No previous messages yet.'}
+
+Your task:
+- Stay on the literal topic.
+- Reply to the previous speaker when one exists.
+- If the previous speaker asked a question, answer it first.
+- Make one main point, then stop.
+- Keep the turn natural, spoken, and characterful.
+- Use your persona as a perspective, not as a replacement topic.
+- Do not output meta-text, drafting text, constraint-check language, or stage directions.
+- Reply mode for this reply: {turn_reply_mode['label']}.
+- {turn_reply_mode['instruction']}
+- Turn shape for this reply: {turn_profile['label']}.
+- {turn_profile['instruction']}
+- Primary speech act for this reply: {turn_speech_act['label']}.
+- {turn_speech_act['instruction']}
+- Hard cap: 4 sentences.
+
+Return only your spoken contribution.'''
+        return system, user
 
     def detect_topic_language(self, text: str):
         if re.search(r'[\u4e00-\u9fff]', text):
@@ -466,7 +574,6 @@ class DebateEngine:
             raise RuntimeError(stderr_line)
 
     async def generate_turn(self, session, advisor, round_index, round_label, conversation_history, language_context):
-        selected = [self.advisors[x] for x in session.advisor_ids]
         message_events = self.message_events(session)
         own_history = self.format_message_list([evt for evt in message_events if evt.advisor_id == advisor.id], 'You have not spoken yet.')
         others_history = self.format_message_list([evt for evt in message_events if evt.advisor_id != advisor.id], 'No one else has spoken yet.')
@@ -476,64 +583,19 @@ class DebateEngine:
         turn_reply_mode = self.choose_turn_reply_mode(previous_turn)
         turn_temperature = min(1.1, max(0.35, self.settings.temperature + turn_profile['temperature_delta'] + turn_speech_act['temperature_delta'] + turn_reply_mode['temperature_delta']))
         turn_max_tokens = min(self.settings.max_tokens_per_turn, turn_profile['max_tokens'])
-        system = advisor.llm_prompt.strip() + f"\n\nYou are participating in a live, interruptible advisory debate. Stay in character. The meeting language is {language_context['prompt_name']}. Speak to the other advisors, not into the void. Your persona is a lens for analyzing the literal meeting topic, not a reason to replace the topic with your profession or favorite jargon. Stay grounded in the real-world situation named in the topic. Do not recast the discussion as a software product, AI model, startup, content strategy, artwork, UX problem, or abstract thought experiment unless the topic itself is actually about that. Never invent an imaginary 'our model', 'our product', 'our users', 'our roadmap', 'our audience', or similar workplace framing unless that framing is explicitly present in the topic or conversation. If you need technical or professional language, tie it to the real systems inside the scenario itself. Maintain memory of what you already said and what the others already said. Use the full conversation record below to remember who said what across the entire debate, not just the last exchange. Sound like a real person in a fast back-and-forth conversation, not a polished panelist. It is normal to answer with one word, a fragment, a short question, a short command, or one sharp sentence when that is enough. Do not default to polished declarative statements. Questions, imperatives, objections, fragments, and quick follow-ups should be common across the debate. When another advisor has just spoken, treat your turn as a reply to that exact line, not as a separate mini-monologue."
-        user = f'''Meeting topic:
-{session.topic}
-
-Participants:
-{self.roster_text(selected)}
-
-Current round:
-{round_label}
-
-Support scores so far:
-{json.dumps(session.scores, ensure_ascii=False)}
-
-Your earlier statements:
-{own_history}
-
-Other advisors already said:
-{others_history}
-
-Immediate turn you are replying to:
-{f"{previous_turn['advisor_name']}: {previous_turn['content']}" if previous_turn else 'You are opening the conversation, so there is no previous turn yet.'}
-
-Full conversation so far (entire discussion, oldest to newest):
-{conversation_history or 'No previous messages yet.'}
-
-Your task:
-- Respond like natural spoken conversation, not a mini-essay.
-- Stay inside the literal topic. Your role is only a perspective on the topic, not a new topic.
-- Keep the discussion about the actual people, place, institutions, material conditions, and consequences implied by the meeting topic.
-- In most turns, mention or clearly imply at least one concrete element of the scenario: affected people, water, food, disease, migration, conflict, infrastructure, government response, time pressure, or another real consequence relevant to this topic.
-- Avoid imaginary workplace framing. Do not talk about a fictional product, roadmap, feature scope, user segment, audience strategy, or model-training task unless the topic literally calls for it.
-- If you use a metric, threshold, system, or trade-off, make it a real one from the scenario itself.
-- Start from the immediate previous turn above whenever one exists.
-- If the previous speaker asked a question, answer that question before anything else.
-- Explicitly react to one concrete claim, question, risk, metric, or assumption from the immediate previous turn.
-- Also stay consistent with the full conversation so far: remember who said what, what you already argued, and what has already been answered.
-- If another advisor drifts into generic role jargon or an unrelated metaphor, pull the discussion back to the literal scenario.
-- Any metric, recommendation, philosophical point, or aesthetic point must still connect back to the real situation in the topic.
-- Do not branch into a parallel monologue or restart from the topic statement.
-- Never narrate your drafting process or style adjustment. Do not output lines like 'wait', 'let\'s make it more...', 'here\'s a version', or quotes around your answer.
-- Make one natural conversational move: agree, disagree, refine, challenge, ask, warn, conclude, redirect, or push for action.
-- Usually cover only one idea and stop.
-- Direct address is good when natural: yes, no, wait, exactly, then answer them.
-- Stay consistent with your earlier stance unless you briefly explain a change.
-- If this is a closing turn, focus on your clearest final takeaway instead of reopening the whole debate.
-- Plain declarative statements should be the exception, not the default.
-- Prefer sentence moods that feel alive in conversation: question, imperative, interruption, correction, or challenge.
-- Reply mode for this reply: {turn_reply_mode['label']}.
-- {turn_reply_mode['instruction']}
-- Turn shape for this reply: {turn_profile['label']}.
-- {turn_profile['instruction']}
-- Primary speech act for this reply: {turn_speech_act['label']}.
-- {turn_speech_act['instruction']}
-- One-word answers are valid when enough.
-- Hard cap: 4 sentences.
-- No bullet list, no markdown, no stage directions.
-
-Return only your spoken contribution.'''
+        system, user = self.build_turn_messages(
+            session,
+            advisor,
+            round_label,
+            conversation_history,
+            language_context,
+            own_history,
+            others_history,
+            previous_turn,
+            turn_profile,
+            turn_speech_act,
+            turn_reply_mode,
+        )
         messages = [
             {'role': 'system', 'content': system},
             {'role': 'user', 'content': user},

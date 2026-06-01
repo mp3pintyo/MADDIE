@@ -202,6 +202,15 @@ def _clean_reasoning_candidate(text: str) -> str:
     return cleaned.strip()
 
 
+def _is_spoken_answer_candidate(text: str) -> bool:
+    candidate = _clean_reasoning_candidate(text)
+    if not candidate:
+        return False
+    if _looks_like_meta_text(candidate):
+        return False
+    return True
+
+
 def _extract_answer_from_reasoning(reasoning: str) -> str:
     if not reasoning:
         return ''
@@ -219,7 +228,7 @@ def _extract_answer_from_reasoning(reasoning: str) -> str:
     candidates = []
     for match in QUOTED_CANDIDATE_RE.findall(reasoning):
         candidate = _clean_reasoning_candidate(match)
-        if candidate and not _looks_like_meta_text(candidate):
+        if _is_spoken_answer_candidate(candidate):
             candidates.append(candidate)
 
     lines = reasoning.splitlines()
@@ -251,7 +260,7 @@ def _extract_answer_from_reasoning(reasoning: str) -> str:
         if collect:
             if not line or re.match(r'^\d+\.', normalized) or any(marker in normalized for marker in stop_markers):
                 candidate = _clean_reasoning_candidate(' '.join(buffer))
-                if candidate and not _looks_like_meta_text(candidate):
+                if _is_spoken_answer_candidate(candidate):
                     candidates.append(candidate)
                 buffer = []
                 collect = False
@@ -262,14 +271,14 @@ def _extract_answer_from_reasoning(reasoning: str) -> str:
         if any(marker in normalized for marker in keyword_markers):
             if ':' in line:
                 trailing = _clean_reasoning_candidate(line.split(':', 1)[1])
-                if trailing and not _looks_like_meta_text(trailing):
+                if _is_spoken_answer_candidate(trailing):
                     candidates.append(trailing)
                     continue
             collect = True
 
     if buffer:
         candidate = _clean_reasoning_candidate(' '.join(buffer))
-        if candidate and not _looks_like_meta_text(candidate):
+        if _is_spoken_answer_candidate(candidate):
             candidates.append(candidate)
 
     for candidate in reversed(candidates):
